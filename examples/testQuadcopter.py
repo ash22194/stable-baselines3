@@ -26,7 +26,7 @@ g = 9.81
 sys = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
 	   'Q': np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': np.diag([0.002, 0.01, 0.01, 0.004]),\
 	   'goal': np.array([[1], [0], [0], [0], [0], [0], [0], [0], [0], [0]]), 'u0': np.array([[m*g], [0], [0], [0]]),\
-	   'T': 4, 'dt': 1e-3, 'gamma_': 0.99975, 'X_DIMS': 10, 'U_DIMS': 4,\
+	   'T': 4, 'dt': 0.5e-3, 'gamma_': 0.99975, 'X_DIMS': 10, 'U_DIMS': 4,\
 	   'x_limits': np.array([[-1.0, 3.0], [-np.pi/2, np.pi/2], [-np.pi/2, np.pi/2], [-np.pi, np.pi], [-4, 4], [-4, 4], [-4, 4], [-12, 12], [-12, 12], [-6, 6]]),\
 	   'u_limits': np.array([[0, 2*m*g], [-0.25*m*g, 0.25*m*g], [-0.25*m*g, 0.25*m*g], [-0.125*m*g, 0.125*m*g]])}
 
@@ -86,8 +86,8 @@ else:
 		policy_std = 0.1 * sys['u_limits'][:,1]
 
 	if (algorithm == 'A2C'):
-		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[dict(pi=[128, 128, 128, 128], vf=[128, 128, 128, 128])], log_std_init=policy_std, optimizer_class=RMSpropTFLike, optimizer_kwargs=dict(eps=1e-5))
-		model = A2C('MlpPolicy', env, gamma=sys['gamma_'], n_steps=40, tensorboard_log=log_path, verbose=1, policy_kwargs=policy_kwargs)
+		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[dict(pi=[128, 128], vf=[128, 128])], log_std_init=policy_std, optimizer_class=RMSpropTFLike, optimizer_kwargs=dict(eps=1e-5))
+		model = A2C('MlpPolicy', env, gamma=sys['gamma_'], n_steps=100, tensorboard_log=log_path, verbose=1, policy_kwargs=policy_kwargs)
 	elif (algorithm == 'PPO'):
 		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[dict(pi=[32, 32], vf=[32, 32])])
 		model = PPO('MlpPolicy', env, gamma=sys['gamma_'], n_steps=env.horizon, clip_range_vf=None, clip_range=0.5, tensorboard_log=log_path, verbose=1, policy_kwargs=policy_kwargs)

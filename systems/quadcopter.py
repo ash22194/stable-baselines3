@@ -32,7 +32,7 @@ class Quadcopter(gym.Env):
 
     # Define action and observation space
     # They must be gym.spaces objects
-    # Example when using continuous actions:
+    # Example when unp.sing continuous actions:
     if (normalized_actions):
         self.action_space = spaces.Box(low=-1, high=1, shape=(self.U_DIMS,), dtype=np.float32)
     else:
@@ -47,15 +47,16 @@ class Quadcopter(gym.Env):
         action = 0.5*((self.u_limits[:,0] + self.u_limits[:,1]) + action*(self.u_limits[:,1] - self.u_limits[:,0]))
     a = action[:,np.newaxis]
     x = self.state[:,np.newaxis]
-    cost = sum((x - self.goal) * np.matmul(self.Q, x - self.goal)) + sum((a - self.u0) * np.matmul(self.R, a - self.u0))
-    cost = cost * self.dt
-    reward = -cost[0]
+    np.cost = sum((x - self.goal) * np.matmul(self.Q, x - self.goal)) + sum((a - self.u0) * np.matmul(self.R, a - self.u0))
+    np.cost = np.cost * self.dt
+    reward = -np.cost[0]
 
     observation = self.dyn_rk4(x, a, self.dt)
     observation = observation[:,0]
-    limit_violation = (observation > self.x_limits[:,1]).any() or (observation < self.x_limits[:,0]).any()
-    if (limit_violation):
-        reward -= 1
+    # limit_violation = (observation > self.x_limits[:,1]).any() or (observation < self.x_limits[:,0]).any()
+    # if (limit_violation):
+    #     reward -= 1
+
     limit_violation = False
     observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
     self.state = observation
@@ -77,14 +78,14 @@ class Quadcopter(gym.Env):
             observation = np.array([0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
         else:
             observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) \
-                          + 0.1 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
+                          + 0.6 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
     else:
         observation = state
 
     self.state = observation
     self.step_count = 0
     return observation  # reward, done, info can't be included
-  
+
   def dyn_rk4(self, x, u, dt):
     k1 = self.dyn(x, u)
     q = x + 0.5*k1*dt
@@ -140,34 +141,30 @@ class Quadcopter(gym.Env):
     t21 = 1.0/I2
     t22 = 1.0/I3
     t23 = 1.0/m
-    t24 = u1+u2+u3+u4
     t15 = t2**2
     t16 = t3**2
     t17 = t3**3
     t18 = np.sin(t11)
     t19 = np.sin(t12)
     t20 = t5**2
-    t25 = 1.0/t3
-    t26 = 1.0/t16
-    et1 = I1*t10*x9*x10-I3*t8*x9*x10+I1*I2*I3*x9*x10-I2*I3*l*t3*u2+I2*I3*l*t3*u4-I1*t6*t10*x8*x9+I3*t6*t8*x8*x9+I1*t9*t15*x9*x10-I2*t8*t15*x9*x10-I1*t10*t15*x9*x10+I3*t8*t15*x9*x10-I1*t10*t16*x9*x10+I3*t8*t16*x9*x10+I2*t10*t16*x9*x10-I3*t9*t16*x9*x10+I1*I2*I3*t16*x8*x9-I1*I2*bk*t2*t6*u1+I1*I2*bk*t2*t6*u2-I1*I2*bk*t2*t6*u3+I1*I2*bk*t2*t6*u4-I1*I3*l*t5*t6*u1+I1*I3*l*t5*t6*u3+I1*t2*t3*t5*t9*t14-I2*t2*t3*t5*t8*t14-I1*t2*t3*t5*t10*t14+I2*t2*t3*t5*t10*t13+I3*t2*t3*t5*t8*t14
-    et2 = -I3*t2*t3*t5*t9*t13-I1*t2*t5*t9*t14*t17+I2*t2*t5*t8*t14*t17+I1*t2*t5*t10*t14*t17-I3*t2*t5*t8*t14*t17-I2*t2*t5*t10*t14*t17+I3*t2*t5*t9*t14*t17-I1*t6*t9*t15*x8*x9+I2*t6*t8*t15*x8*x9+I1*t6*t10*t15*x8*x9-I3*t6*t8*t15*x8*x9-I1*t9*t15*t16*x9*x10+I2*t8*t15*t16*x9*x10+I1*t10*t15*t16*x9*x10-I3*t8*t15*t16*x9*x10-I2*t10*t15*t16*x9*x10*2.0+I3*t9*t15*t16*x9*x10*2.0+I1*I2*I3*t6*t15*x8*x9-I1*I2*I3*t15*t16*x8*x9-I1*I2*I3*t2*t5*t17*x8*x10-I1*t2*t3*t5*t6*t9*x8*x10+I2*t2*t3*t5*t6*t8*x8*x10+I1*t2*t3*t5*t6*t10*x8*x10
-    et3 = -I3*t2*t3*t5*t6*t8*x8*x10+I1*I2*I3*t2*t3*t5*t6*x8*x10
-    et4 = t21*t22*(t9*t14*t19-t3*t9*x8*x10*2.0-t9*t18*x8*x9+t10*t18*x8*x9-I1*I2*t14*t19-I2*bk*t5*u1*2.0+I2*bk*t5*u2*2.0-I2*bk*t5*u3*2.0+I2*bk*t5*u4*2.0+I3*l*t2*u1*2.0-I3*l*t2*u3*2.0+I1*I2*t3*x8*x10*2.0+I2*I3*t3*x8*x10*2.0+I1*I2*t18*x8*x9-I1*I3*t18*x8*x9-t3*t6*t9*t14*t15*2.0+t3*t6*t10*t14*t15*2.0+t3*t9*t15*x8*x10*2.0-t3*t10*t15*x8*x10*2.0+t2*t5*t6*t9*x9*x10*2.0-t2*t5*t6*t10*x9*x10*2.0+I1*I2*t3*t6*t14*t15*2.0-I1*I3*t3*t6*t14*t15*2.0-I1*I2*t3*t15*x8*x10*2.0+I1*I3*t3*t15*x8*x10*2.0-I1*I2*t2*t5*t6*x9*x10*2.0+I1*I3*t2*t5*t6*x9*x10*2.0)
-    et5 = -1.0/2.0
-    et6 = t26*(t5*x9-t2*t3*x10)*(t3*t5*x8-t2*t6*x9)-t21*t22*t25*(t9*t15*x8*x9+t10*t20*x8*x9+I2*bk*t2*u1-I2*bk*t2*u2+I2*bk*t2*u3-I2*bk*t2*u4+I3*l*t5*u1-I3*l*t5*u3-I1*I2*t15*x8*x9-I1*I3*t20*x8*x9-t6*t9*t15*x9*x10-t6*t10*t20*x9*x10-t2*t3*t5*t6*t9*t14+t2*t3*t5*t6*t10*t14+t2*t3*t5*t9*x8*x10-t2*t3*t5*t10*x8*x10+I1*I2*t6*t15*x9*x10+I1*I3*t6*t20*x9*x10+I1*I2*t2*t3*t5*t6*t14-I1*I3*t2*t3*t5*t6*t14-I1*I2*t2*t3*t5*x8*x10+I1*I3*t2*t3*t5*x8*x10)
-    et7 = t26*x8*np.cos(x2-x3)*(t2*x9+t3*t5*x10)
+    t24 = 1.0/t3
+    t25 = 1.0/t16
+    et1 = I1*t10*x9*x10-I3*t8*x9*x10+I1*I2*I3*x9*x10+I2*I3*l*t3*u2-I1*t6*t10*x8*x9+I3*t6*t8*x8*x9+I1*t9*t15*x9*x10-I2*t8*t15*x9*x10-I1*t10*t15*x9*x10+I3*t8*t15*x9*x10-I1*t10*t16*x9*x10+I3*t8*t16*x9*x10+I2*t10*t16*x9*x10-I3*t9*t16*x9*x10+I1*I2*I3*t16*x8*x9+I1*I2*bk*t2*t6*u4+I1*I3*l*t5*t6*u3+I1*t2*t3*t5*t9*t14-I2*t2*t3*t5*t8*t14-I1*t2*t3*t5*t10*t14+I2*t2*t3*t5*t10*t13+I3*t2*t3*t5*t8*t14-I3*t2*t3*t5*t9*t13-I1*t2*t5*t9*t14*t17+I2*t2*t5*t8*t14*t17+I1*t2*t5*t10*t14*t17-I3*t2*t5*t8*t14*t17
+    et2 = -I2*t2*t5*t10*t14*t17+I3*t2*t5*t9*t14*t17-I1*t6*t9*t15*x8*x9+I2*t6*t8*t15*x8*x9+I1*t6*t10*t15*x8*x9-I3*t6*t8*t15*x8*x9-I1*t9*t15*t16*x9*x10+I2*t8*t15*t16*x9*x10+I1*t10*t15*t16*x9*x10-I3*t8*t15*t16*x9*x10-I2*t10*t15*t16*x9*x10*2.0+I3*t9*t15*t16*x9*x10*2.0+I1*I2*I3*t6*t15*x8*x9-I1*I2*I3*t15*t16*x8*x9-I1*I2*I3*t2*t5*t17*x8*x10-I1*t2*t3*t5*t6*t9*x8*x10+I2*t2*t3*t5*t6*t8*x8*x10+I1*t2*t3*t5*t6*t10*x8*x10-I3*t2*t3*t5*t6*t8*x8*x10+I1*I2*I3*t2*t3*t5*t6*x8*x10
+    mt2 = t21*t22*(t9*t14*t19-t3*t9*x8*x10*2.0-t9*t18*x8*x9+t10*t18*x8*x9-I1*I2*t14*t19+I2*bk*t5*u4*2.0-I3*l*t2*u3*2.0+I1*I2*t3*x8*x10*2.0+I2*I3*t3*x8*x10*2.0+I1*I2*t18*x8*x9-I1*I3*t18*x8*x9-t3*t6*t9*t14*t15*2.0+t3*t6*t10*t14*t15*2.0+t3*t9*t15*x8*x10*2.0-t3*t10*t15*x8*x10*2.0+t2*t5*t6*t9*x9*x10*2.0-t2*t5*t6*t10*x9*x10*2.0+I1*I2*t3*t6*t14*t15*2.0-I1*I3*t3*t6*t14*t15*2.0-I1*I2*t3*t15*x8*x10*2.0+I1*I3*t3*t15*x8*x10*2.0-I1*I2*t2*t5*t6*x9*x10*2.0+I1*I3*t2*t5*t6*x9*x10*2.0)*(-1.0/2.0)
+    mt3 = t25*(t5*x9-t2*t3*x10)*(t3*t5*x8-t2*t6*x9)+t21*t22*t24*(-t9*t15*x8*x9-t10*t20*x8*x9+I2*bk*t2*u4+I3*l*t5*u3+I1*I2*t15*x8*x9+I1*I3*t20*x8*x9+t6*t9*t15*x9*x10+t6*t10*t20*x9*x10+t2*t3*t5*t6*t9*t14-t2*t3*t5*t6*t10*t14-t2*t3*t5*t9*x8*x10+t2*t3*t5*t10*x8*x10-I1*I2*t6*t15*x9*x10-I1*I3*t6*t20*x9*x10-I1*I2*t2*t3*t5*t6*t14+I1*I3*t2*t3*t5*t6*t14+I1*I2*t2*t3*t5*x8*x10-I1*I3*t2*t3*t5*x8*x10)+t25*x8*np.cos(x2-x3)*(t2*x9+t3*t5*x10)
 
     dx = np.zeros((self.X_DIMS, 1))
     dx[0,0] = x7
     dx[1,0] = x8
     dx[2,0] = x9
     dx[3,0] = x10
-    dx[4,0] = t23*t24*(t5*t7+t2*t4*t6)
-    dx[5,0] = -t23*t24*(t4*t5-t2*t6*t7)
-    dx[6,0] = -g+t2*t3*t23*t24
-    dx[7,0] = (t21*t22*t25*(et1+et2+et3))/I1
-    dx[8,0] = et4*et5
-    dx[9,0] = et6+et7
+    dx[4,0] = t23*u1*(t5*t7+t2*t4*t6)
+    dx[5,0] = -t23*u1*(t4*t5-t2*t6*t7)
+    dx[6,0] = -g+t2*t3*t23*u1
+    dx[7,0] = (t21*t22*t24*(et1+et2))/I1
+    dx[8,0] = mt2
+    dx[9,0] = mt3
     
     return dx
 
