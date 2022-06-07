@@ -4,34 +4,99 @@ Changelog
 ==========
 
 
-Release 1.4.1a0 (WIP)
+Release 1.5.1a8 (WIP)
 ---------------------------
-
 
 Breaking Changes:
 ^^^^^^^^^^^^^^^^^
-
+- Changed the way policy "aliases" are handled ("MlpPolicy", "CnnPolicy", ...), removing the former
+  ``register_policy`` helper, ``policy_base`` parameter and using ``policy_aliases`` static attributes instead (@Gregwar)
+- SB3 now requires PyTorch >= 1.11
 
 New Features:
 ^^^^^^^^^^^^^
 
 SB3-Contrib
 ^^^^^^^^^^^
+- Added Recurrent PPO (PPO LSTM). See https://github.com/Stable-Baselines-Team/stable-baselines3-contrib/pull/53
+
 
 Bug Fixes:
 ^^^^^^^^^^
-- Fixed a bug in ``VecMonitor``. The monitor did not consider the ``info_keywords`` during stepping (@ScheiklP)
+- Fixed saving and loading large policies greater than 2GB (@jkterry1, @ycheng517)
+- Fixed final goal selection strategy that did not sample the final achieved goal (@qgallouedec)
+- Fixed a bug with special characters in the tensorboard log name (@quantitative-technologies)
+- Fixed a bug in ``DummyVecEnv``'s and ``SubprocVecEnv``'s seeding function. None value was unchecked (@ScheiklP)
+- Fixed a bug where ``EvalCallback`` would crash when trying to synchronize ``VecNormalize`` stats when observation normalization was disabled
+- Added a check for unbounded actions
+- Fixed issues due to newer version of protobuf (tensorboard) and sphinx
 
 Deprecations:
 ^^^^^^^^^^^^^
 
 Others:
 ^^^^^^^
+- Upgraded to Python 3.7+ syntax using ``pyupgrade``
+- Removed redundant double-check for nested observations from ``BaseAlgorithm._wrap_env`` (@TibiGG)
+
+Documentation:
+^^^^^^^^^^^^^^
+- Added link to gym doc and gym env checker
+- Fix typo in PPO doc (@bcollazo)
+- Added link to PPO ICLR blog post
+- Added remark about breaking Markov assumption and timeout handling
+- Added doc about MLFlow integration via custom logger (@git-thor)
+- Updated Huggingface integration doc
+
+
+Release 1.5.0 (2022-03-25)
+---------------------------
+
+**Bug fixes, early stopping callback**
+
+Breaking Changes:
+^^^^^^^^^^^^^^^^^
+- Switched minimum Gym version to 0.21.0.
+
+New Features:
+^^^^^^^^^^^^^
+- Added ``StopTrainingOnNoModelImprovement`` to callback collection (@caburu)
+- Makes the length of keys and values in ``HumanOutputFormat`` configurable,
+  depending on desired maximum width of output.
+- Allow PPO to turn of advantage normalization (see `PR #763 <https://github.com/DLR-RM/stable-baselines3/pull/763>`_) @vwxyzjn
+
+SB3-Contrib
+^^^^^^^^^^^
+- coming soon: Cross Entropy Method, see https://github.com/Stable-Baselines-Team/stable-baselines3-contrib/pull/62
+
+Bug Fixes:
+^^^^^^^^^^
+- Fixed a bug in ``VecMonitor``. The monitor did not consider the ``info_keywords`` during stepping (@ScheiklP)
+- Fixed a bug in ``HumanOutputFormat``. Distinct keys truncated to the same prefix would overwrite each others value,
+  resulting in only one being output. This now raises an error (this should only affect a small fraction of use cases
+  with very long keys.)
+- Routing all the ``nn.Module`` calls through implicit rather than explict forward as per pytorch guidelines (@manuel-delverme)
+- Fixed a bug in ``VecNormalize`` where error occurs when ``norm_obs`` is set to False for environment with dictionary observation  (@buoyancy99)
+- Set default ``env`` argument to ``None`` in ``HerReplayBuffer.sample`` (@qgallouedec)
+- Fix ``batch_size`` typing in ``DQN`` (@qgallouedec)
+- Fixed sample normalization in ``DictReplayBuffer`` (@qgallouedec)
+
+Deprecations:
+^^^^^^^^^^^^^
+
+Others:
+^^^^^^^
+- Fixed pytest warnings
+- Removed parameter ``remove_time_limit_termination`` in off policy algorithms since it was dead code (@Gregwar)
 
 Documentation:
 ^^^^^^^^^^^^^^
 - Added doc on Hugging Face integration (@simoninithomas)
-
+- Added furuta pendulum project to project list (@armandpl)
+- Fix indentation 2 spaces to 4 spaces in custom env documentation example (@Gautam-J)
+- Update MlpExtractor docstring (@gianlucadecola)
+- Added explanation of the logger output
+- Update ``Directly Accessing The Summary Writer`` in tensorboard integration (@xy9485)
 
 Release 1.4.0 (2022-01-18)
 ---------------------------
@@ -125,6 +190,7 @@ Breaking Changes:
     - ``time/total timesteps`` to ``time/total_timesteps`` for off-policy algorithms (PPO and A2C) and the eval callback (on-policy algorithms already used the underscored version),
     - ``rollout/exploration rate`` to ``rollout/exploration_rate`` and
     - ``rollout/success rate`` to ``rollout/success_rate``.
+
 
 New Features:
 ^^^^^^^^^^^^^
@@ -909,4 +975,5 @@ And all the contributors:
 @benblack769 @bstee615 @c-rizz @skandermoalla @MihaiAnca13 @davidblom603 @ayeright @cyprienc
 @wkirgsn @AechPro @CUN-bjy @batu @IljaAvadiev @timokau @kachayev @cleversonahum
 @eleurent @ac-93 @cove9988 @theDebugger811 @hsuehch @Demetrio92 @thomasgubler @IperGiove @ScheiklP
-@simoninithomas
+@simoninithomas @armandpl @manuel-delverme @Gautam-J @gianlucadecola @buoyancy99 @caburu @xy9485
+@Gregwar @ycheng517 @quantitative-technologies @bcollazo @git-thor @TibiGG
