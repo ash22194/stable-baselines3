@@ -38,6 +38,7 @@ class Manipulator4DOF(gym.Env):
         self.action_space = spaces.Box(low=self.u_limits[:,0], high=self.u_limits[:,1], dtype=np.float32)
 
     self.observation_space = spaces.Box(low=self.x_limits[:,0], high=self.x_limits[:,1], dtype=np.float32)
+    # self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.X_DIMS,), dtype=np.float32)
 
   def step(self, action):
     # If scaling actions use this
@@ -50,11 +51,13 @@ class Manipulator4DOF(gym.Env):
     reward = -np.cost[0]
 
     # observation = self.dyn_rk4(x, a, self.dt)
-    observation = self.dyn_numerical_rk4(x, a, self.dt)
+    # observation = self.dyn_numerical_rk4(x, a, self.dt)
+    observation = self.dyn_simscape_rk4(x, a, self.dt)
     observation = observation[:,0]
     # limit_violation = (observation > self.x_limits[:,1]).any() or (observation < self.x_limits[:,0]).any()
     limit_violation = False
-    observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
+    # observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
+    observation = np.minimum(20, np.maximum(-20, observation))
     self.state = observation
     self.step_count += 1
 
@@ -74,7 +77,7 @@ class Manipulator4DOF(gym.Env):
 
     if (state is None):
         if (self.fixed_start):
-            observation = np.array([0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+            observation = np.array([np.pi, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
         else:
             observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) \
                           + 0.2 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])

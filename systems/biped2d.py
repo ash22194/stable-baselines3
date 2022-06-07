@@ -39,7 +39,9 @@ class Biped2D(gym.Env):
     else:
         # self.action_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.U_DIMS,), dtype=np.float32)
         self.action_space = spaces.Box(low=self.u_limits[:,0], high=self.u_limits[:,1], dtype=np.float32)    
+    
     self.observation_space = spaces.Box(low=self.x_limits[:,0], high=self.x_limits[:,1], dtype=np.float32)
+    # self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.X_DIMS,), dtype=np.float32)
 
   def step(self, action):
     # If scaling actions use this
@@ -56,6 +58,7 @@ class Biped2D(gym.Env):
     # limit_violation = (observation > self.x_limits[:,1]).any() or (observation < self.x_limits[:,0]).any()
     limit_violation = False
     observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
+    # observation = np.minimum(np.array([1.5, 3*np.pi/4, 6, 6, 3*np.pi/4, 6]), np.maximum(np.array([0.25, np.pi/4, -6, -6, -3*np.pi/4, -6]), observation))
     self.state = observation
     self.step_count += 1
 

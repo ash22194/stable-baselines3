@@ -77,7 +77,7 @@ class CartPole(gym.Env):
             observation = np.array([0.0, 0.0, 0.0, 0.0])
         else:
             observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) \
-                          + 0.8 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
+                          + 0.6 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
     else:
         observation = state
 

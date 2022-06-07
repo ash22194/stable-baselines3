@@ -40,6 +40,7 @@ class Quadcopter(gym.Env):
         self.action_space = spaces.Box(low=self.u_limits[:,0], high=self.u_limits[:,1], dtype=np.float32)
 
     self.observation_space = spaces.Box(low=self.x_limits[:,0], high=self.x_limits[:,1], dtype=np.float32)
+    # self.observation_space = spaces.Box(low=-10, high=10, shape=(self.X_DIMS,), dtype=np.float32)
 
   def step(self, action):
     # If scaling actions use this
@@ -58,7 +59,8 @@ class Quadcopter(gym.Env):
     #     reward -= 1
 
     limit_violation = False
-    observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
+    # observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
+    observation = np.minimum(10, np.maximum(-10, observation))
     self.state = observation
     self.step_count += 1
 
@@ -78,7 +80,7 @@ class Quadcopter(gym.Env):
             observation = np.array([0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
         else:
             observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) \
-                          + 0.6 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
+                          + 0.4 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
     else:
         observation = state
 
@@ -97,6 +99,22 @@ class Quadcopter(gym.Env):
     q = x + k3*dt
 
     k4 = self.dyn(q, u)
+    
+    q = x + dt * (k1 + 2*k2 + 2*k3 + k4) / 6.0
+
+    return q
+  
+  def dyn_full_rk4(self, x, u, dt):
+    k1 = self.dyn_full(x, u)
+    q = x + 0.5*k1*dt
+
+    k2 = self.dyn_full(q, u)
+    q = x + 0.5*k2*dt
+
+    k3 = self.dyn_full(q, u)
+    q = x + k3*dt
+
+    k4 = self.dyn_full(q, u)
     
     q = x + dt * (k1 + 2*k2 + 2*k3 + k4) / 6.0
 
@@ -166,6 +184,14 @@ class Quadcopter(gym.Env):
     dx[8,0] = mt2
     dx[9,0] = mt3
     
+    return dx
+
+  def dyn_full(self, x, u):
+    
+    dx = np.zeros((self.X_DIMS+2, 1))
+    dx[0:2,:] = x[6:8,:] # vx, vy
+    dx[2:,:] = self.dyn(x[2:,:], u)
+
     return dx
 
   def render(self, mode='human'):
