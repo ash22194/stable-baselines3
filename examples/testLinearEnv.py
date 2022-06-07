@@ -5,7 +5,6 @@ import os
 
 import numpy as np
 import matplotlib.pyplot as plt
-from ipdb import set_trace
 from scipy.linalg import solve_continuous_are
 
 from systems.linearsystem import LinearSystem
@@ -124,7 +123,6 @@ for i in range(24000):
 		obs = env.reset()
 		start = obs[0:sys['X_DIMS']]
 
-set_trace()
 fig = plt.figure()
 ax1 = fig.add_subplot(211)
 ax1.set_xlabel('x')
