@@ -1,4 +1,5 @@
 import types
+import warnings
 
 import gym
 import numpy as np
@@ -27,7 +28,7 @@ ENV_CLASSES = [
 ]
 
 
-@pytest.mark.parametrize("env_id", ["CartPole-v0", "Pendulum-v0"])
+@pytest.mark.parametrize("env_id", ["CartPole-v0", "Pendulum-v1"])
 def test_env(env_id):
     """
     Check that environmnent integrated in Gym pass the test.
@@ -35,12 +36,12 @@ def test_env(env_id):
     :param env_id: (str)
     """
     env = gym.make(env_id)
-    with pytest.warns(None) as record:
+    with warnings.catch_warnings(record=True) as record:
         check_env(env)
 
-    # Pendulum-v0 will produce a warning because the action space is
+    # Pendulum-v1 will produce a warning because the action space is
     # in [-2, 2] and not [-1, 1]
-    if env_id == "Pendulum-v0":
+    if env_id == "Pendulum-v1":
         assert len(record) == 1
     else:
         # The other environments must pass without warning
@@ -50,7 +51,7 @@ def test_env(env_id):
 @pytest.mark.parametrize("env_class", ENV_CLASSES)
 def test_custom_envs(env_class):
     env = env_class()
-    with pytest.warns(None) as record:
+    with warnings.catch_warnings(record=True) as record:
         check_env(env)
     # No warnings for custom envs
     assert len(record) == 0
@@ -68,7 +69,7 @@ def test_custom_envs(env_class):
 def test_bit_flipping(kwargs):
     # Additional tests for BitFlippingEnv
     env = BitFlippingEnv(**kwargs)
-    with pytest.warns(None) as record:
+    with warnings.catch_warnings(record=True) as record:
         check_env(env)
 
     # No warnings for custom envs
@@ -140,6 +141,8 @@ def test_non_default_spaces(new_obs_space):
         spaces.Box(low=1, high=-1, shape=(2,), dtype=np.float32),
         # Same boundaries
         spaces.Box(low=1, high=1, shape=(2,), dtype=np.float32),
+        # Unbounded action space
+        spaces.Box(low=-np.inf, high=1, shape=(2,), dtype=np.float32),
         # Almost good, except for one dim
         spaces.Box(low=np.array([-1, -1, -1]), high=np.array([1, 1, 0.99]), dtype=np.float32),
     ],
@@ -147,7 +150,7 @@ def test_non_default_spaces(new_obs_space):
 def test_non_default_action_spaces(new_action_space):
     env = FakeImageEnv(discrete=False)
     # Default, should pass the test
-    with pytest.warns(None) as record:
+    with warnings.catch_warnings(record=True) as record:
         check_env(env)
 
     # No warnings for custom envs
@@ -155,8 +158,14 @@ def test_non_default_action_spaces(new_action_space):
     # Change the action space
     env.action_space = new_action_space
 
-    with pytest.warns(UserWarning):
-        check_env(env)
+    # Unbounded action space throws an error,
+    # the rest only warning
+    if not np.all(np.isfinite(env.action_space.low)):
+        with pytest.raises(AssertionError), pytest.warns(UserWarning):
+            check_env(env)
+    else:
+        with pytest.warns(UserWarning):
+            check_env(env)
 
 
 def check_reset_assert_error(env, new_reset_return):
