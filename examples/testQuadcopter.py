@@ -27,7 +27,7 @@ g = 9.81
 sys = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
 	   'Q': np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': np.diag([0.002, 0.01, 0.01, 0.004]),\
 	   'goal': np.array([[1], [0], [0], [0], [0], [0], [0], [0], [0], [0]]), 'u0': np.array([[m*g], [0], [0], [0]]),\
-	   'T': 12, 'dt': 2.5e-3, 'lambda_': 1, 'X_DIMS': 10, 'U_DIMS': 4,\
+	   'T': 2, 'dt': 2.5e-3, 'lambda_': 1, 'X_DIMS': 10, 'U_DIMS': 4,\
 	   'x_limits': np.array([[0, 2.0], [-np.pi/2, np.pi/2], [-np.pi/2, np.pi/2], [-np.pi, np.pi], [-4, 4], [-4, 4], [-4, 4], [-3, 3], [-3, 3], [-3, 3]]),\
 	   'u_limits': np.array([[0, 2*m*g], [-0.25*m*g, 0.25*m*g], [-0.25*m*g, 0.25*m*g], [-0.125*m*g, 0.125*m*g]])}
 sys['gamma_'] = np.exp(-sys['lambda_']*sys['dt'])
@@ -40,7 +40,7 @@ env = Quadcopter(sys, fixed_start=fixed_start, normalized_actions=normalized_act
 check_env(env)
 
 # Compute Policy and Value function numerically
-algorithm = 'PPO'
+algorithm = 'A2C'
 if (fixed_start):
 	save_path = os.path.join('examples/data/quadcopter_fixedstart', algorithm)
 else:
@@ -59,7 +59,7 @@ for ff in files:
 		save_timestep = tt
 		ff_latest = ff
 
-total_timesteps = 24000000
+total_timesteps = 12000000
 model_load = False
 if ((save_timestep <= total_timesteps) and (save_timestep > 0)):
 	if (algorithm == 'A2C'):
@@ -77,10 +77,10 @@ else:
 	n_steps = 100
 
 	if (algorithm == 'A2C'):
-		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[dict(pi=[256, 256], vf=[256, 256])], log_std_init=policy_std, optimizer_class=RMSpropTFLike, optimizer_kwargs=dict(eps=1e-5))
+		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[256, 256, dict(pi=[256, 256], vf=[256, 256])], log_std_init=policy_std, optimizer_class=RMSpropTFLike, optimizer_kwargs=dict(eps=1e-5))
 		model = A2C('MlpPolicy', env, gamma=sys['gamma_'], n_steps=n_steps, tensorboard_log=log_path, verbose=1, policy_kwargs=policy_kwargs)
 	elif (algorithm == 'PPO'):
-		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[dict(pi=[256, 256], vf=[256, 256])], log_std_init=policy_std, optimizer_class=RMSpropTFLike, optimizer_kwargs=dict(eps=1e-5))
+		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[256, 256, dict(pi=[256, 256], vf=[256, 256])], log_std_init=policy_std, optimizer_class=RMSpropTFLike, optimizer_kwargs=dict(eps=1e-5))
 		model = PPO('MlpPolicy', env, gamma=sys['gamma_'], n_steps=n_steps, n_epochs=1, batch_size=n_steps, clip_range_vf=None, clip_range=0.2, tensorboard_log=log_path, verbose=1, policy_kwargs=policy_kwargs)
 	elif (algorithm == 'DDPG'):
 		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=dict(pi=[16, 16], qf=[16, 16]))
