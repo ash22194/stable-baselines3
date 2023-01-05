@@ -20,19 +20,26 @@ from stable_baselines3.common.envs import BitFlippingEnv, IdentityEnv
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
 
+def select_env(model_class) -> str:
+    if model_class is DQN:
+        return "CartPole-v1"
+    else:
+        return "Pendulum-v1"
+
+
 @pytest.mark.parametrize("model_class", [A2C, PPO, SAC, TD3, DQN, DDPG])
 def test_callbacks(tmp_path, model_class):
     log_folder = tmp_path / "logs/callbacks/"
 
     # DQN only support discrete actions
-    env_name = select_env(model_class)
+    env_id = select_env(model_class)
     # Create RL model
     # Small network for fast test
-    model = model_class("MlpPolicy", env_name, policy_kwargs=dict(net_arch=[32]))
+    model = model_class("MlpPolicy", env_id, policy_kwargs=dict(net_arch=[32]))
 
     checkpoint_callback = CheckpointCallback(save_freq=1000, save_path=log_folder)
 
-    eval_env = gym.make(env_name)
+    eval_env = gym.make(env_id)
     # Stop training if the performance is good enough
     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=-1200, verbose=1)
 
@@ -71,8 +78,8 @@ def test_callbacks(tmp_path, model_class):
     assert event_callback.n_calls == model.num_timesteps
 
     model.learn(500, callback=None)
-    # Transform callback into a callback list automatically
-    model.learn(500, callback=[checkpoint_callback, eval_callback])
+    # Transform callback into a callback list automatically and use progress bar
+    model.learn(500, callback=[checkpoint_callback, eval_callback], progress_bar=True)
     # Automatic wrapping, old way of doing callbacks
     model.learn(500, callback=lambda _locals, _globals: True)
 
@@ -82,7 +89,7 @@ def test_callbacks(tmp_path, model_class):
         n_envs = 2
         # Pendulum-v1 has a timelimit of 200 timesteps
         max_episode_length = 200
-        envs = make_vec_env(env_name, n_envs=n_envs, seed=0)
+        envs = make_vec_env(env_id, n_envs=n_envs, seed=0)
 
         model = model_class("MlpPolicy", envs, policy_kwargs=dict(net_arch=[32]))
 
@@ -98,13 +105,6 @@ def test_callbacks(tmp_path, model_class):
 
     if os.path.exists(log_folder):
         shutil.rmtree(log_folder)
-
-
-def select_env(model_class) -> str:
-    if model_class is DQN:
-        return "CartPole-v0"
-    else:
-        return "Pendulum-v1"
 
 
 def test_eval_callback_vec_env():
@@ -153,17 +153,17 @@ def test_eval_callback_logs_are_written_with_the_correct_timestep(tmp_path):
     pytest.importorskip("tensorboard")
     from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
-    env_name = select_env(DQN)
+    env_id = select_env(DQN)
     model = DQN(
         "MlpPolicy",
-        env_name,
+        env_id,
         policy_kwargs=dict(net_arch=[32]),
         tensorboard_log=tmp_path,
         verbose=1,
         seed=1,
     )
 
-    eval_env = gym.make(env_name)
+    eval_env = gym.make(env_id)
     eval_freq = 101
     eval_callback = EvalCallback(eval_env, eval_freq=eval_freq, warn=False)
     model.learn(500, callback=eval_callback)
@@ -203,3 +203,29 @@ def test_eval_friendly_error():
     with pytest.warns(Warning):
         with pytest.raises(AssertionError):
             model.learn(100, callback=eval_callback)
+
+
+def test_checkpoint_additional_info(tmp_path):
+    # tests if the replay buffer and the VecNormalize stats are saved with every checkpoint
+    dummy_vec_env = DummyVecEnv([lambda: gym.make("CartPole-v1")])
+    env = VecNormalize(dummy_vec_env)
+
+    checkpoint_dir = tmp_path / "checkpoints"
+    checkpoint_callback = CheckpointCallback(
+        save_freq=200,
+        save_path=checkpoint_dir,
+        save_replay_buffer=True,
+        save_vecnormalize=True,
+        verbose=2,
+    )
+
+    model = DQN("MlpPolicy", env, learning_starts=100, buffer_size=500, seed=0)
+    model.learn(200, callback=checkpoint_callback)
+
+    assert os.path.exists(checkpoint_dir / "rl_model_200_steps.zip")
+    assert os.path.exists(checkpoint_dir / "rl_model_replay_buffer_200_steps.pkl")
+    assert os.path.exists(checkpoint_dir / "rl_model_vecnormalize_200_steps.pkl")
+    # Check that checkpoints can be properly loaded
+    model = DQN.load(checkpoint_dir / "rl_model_200_steps.zip")
+    model.load_replay_buffer(checkpoint_dir / "rl_model_replay_buffer_200_steps.pkl")
+    VecNormalize.load(checkpoint_dir / "rl_model_vecnormalize_200_steps.pkl", dummy_vec_env)

@@ -2,6 +2,7 @@ import gym
 import numpy as np
 import pytest
 import torch as th
+from gym import spaces
 
 from stable_baselines3 import A2C, DQN, PPO, SAC, TD3
 from stable_baselines3.common.envs import IdentityEnv
@@ -17,7 +18,7 @@ MODEL_LIST = [
 ]
 
 
-class SubClassedBox(gym.spaces.Box):
+class SubClassedBox(spaces.Box):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -37,17 +38,15 @@ class CustomSubClassedSpaceEnv(gym.Env):
 
 @pytest.mark.parametrize("model_class", MODEL_LIST)
 def test_auto_wrap(model_class):
-    # test auto wrapping of env into a VecEnv
-
+    """Test auto wrapping of env into a VecEnv."""
     # Use different environment for DQN
     if model_class is DQN:
-        env_name = "CartPole-v0"
+        env_id = "CartPole-v1"
     else:
-        env_name = "Pendulum-v1"
-    env = gym.make(env_name)
-    eval_env = gym.make(env_name)
+        env_id = "Pendulum-v1"
+    env = gym.make(env_id)
     model = model_class("MlpPolicy", env)
-    model.learn(100, eval_env=eval_env)
+    model.learn(100)
 
 
 @pytest.mark.parametrize("model_class", MODEL_LIST)
@@ -73,11 +72,13 @@ def test_predict(model_class, env_id, device):
 
     obs = env.reset()
     action, _ = model.predict(obs)
+    assert isinstance(action, np.ndarray)
     assert action.shape == env.action_space.shape
     assert env.action_space.contains(action)
 
     vec_env_obs = vec_env.reset()
     action, _ = model.predict(vec_env_obs)
+    assert isinstance(action, np.ndarray)
     assert action.shape[0] == vec_env_obs.shape[0]
 
     # Special case for DQN to check the epsilon greedy exploration

@@ -12,7 +12,7 @@ To use Tensorboard with stable baselines3, you simply need to pass the location 
 
     from stable_baselines3 import A2C
 
-    model = A2C('MlpPolicy', 'CartPole-v1', verbose=1, tensorboard_log="./a2c_cartpole_tensorboard/")
+    model = A2C("MlpPolicy", "CartPole-v1", verbose=1, tensorboard_log="./a2c_cartpole_tensorboard/")
     model.learn(total_timesteps=10_000)
 
 
@@ -22,13 +22,23 @@ You can also define custom logging name when training (by default it is the algo
 
     from stable_baselines3 import A2C
 
-    model = A2C('MlpPolicy', 'CartPole-v1', verbose=1, tensorboard_log="./a2c_cartpole_tensorboard/")
+    model = A2C("MlpPolicy", "CartPole-v1", verbose=1, tensorboard_log="./a2c_cartpole_tensorboard/")
     model.learn(total_timesteps=10_000, tb_log_name="first_run")
     # Pass reset_num_timesteps=False to continue the training curve in tensorboard
     # By default, it will create a new curve
+    # Keep tb_log_name constant to have continuous curve (see note below)
     model.learn(total_timesteps=10_000, tb_log_name="second_run", reset_num_timesteps=False)
     model.learn(total_timesteps=10_000, tb_log_name="third_run", reset_num_timesteps=False)
 
+
+.. note::
+    If you specify different ``tb_log_name`` in subsequent runs, you will have split graphs, like in the figure below.
+    If you want them to be continuous, you must keep the same ``tb_log_name`` (see `issue #975 <https://github.com/DLR-RM/stable-baselines3/issues/975#issuecomment-1198992211>`_).
+    And, if you still managed to get your graphs split by other means, just put tensorboard log files into the same folder.
+
+    .. image:: ../_static/img/split_graph.png
+      :width: 330
+      :alt: split_graph
 
 Once the learn function is called, you can monitor the RL agent during or after the training, with the following bash command:
 
@@ -76,12 +86,12 @@ Here is a simple example on how to log both additional tensor or arbitrary scala
         """
 
         def __init__(self, verbose=0):
-            super(TensorboardCallback, self).__init__(verbose)
+            super().__init__(verbose)
 
         def _on_step(self) -> bool:
             # Log scalar value (here a random variable)
             value = np.random.random()
-            self.logger.record('random_value', value)
+            self.logger.record("random_value", value)
             return True
 
 
@@ -115,7 +125,7 @@ Here is an example of how to render an image to TensorBoard at regular intervals
 
     class ImageRecorderCallback(BaseCallback):
         def __init__(self, verbose=0):
-            super(ImageRecorderCallback, self).__init__(verbose)
+            super().__init__(verbose)
 
         def _on_step(self):
             image = self.training_env.render(mode="rgb_array")
@@ -152,7 +162,7 @@ Here is an example of how to store a plot in TensorBoard at regular intervals:
 
     class FigureRecorderCallback(BaseCallback):
         def __init__(self, verbose=0):
-            super(FigureRecorderCallback, self).__init__(verbose)
+            super().__init__(verbose)
 
         def _on_step(self):
             # Plot values (here a random variable)
@@ -239,6 +249,55 @@ Here is an example of how to render an episode and log the resulting video to Te
     video_recorder = VideoRecorderCallback(gym.make("CartPole-v1"), render_freq=5000)
     model.learn(total_timesteps=int(5e4), callback=video_recorder)
 
+Logging Hyperparameters
+-----------------------
+
+TensorBoard supports logging of hyperparameters in its HPARAMS tab, which helps comparing agents trainings.
+
+.. warning::
+    To display hyperparameters in the HPARAMS section, a ``metric_dict`` must be given (as well as a ``hparam_dict``).
+
+
+Here is an example of how to save hyperparameters in TensorBoard:
+
+.. code-block:: python
+
+    from stable_baselines3 import A2C
+    from stable_baselines3.common.callbacks import BaseCallback
+    from stable_baselines3.common.logger import HParam
+
+
+    class HParamCallback(BaseCallback):
+        def __init__(self):
+            """
+            Saves the hyperparameters and metrics at the start of the training, and logs them to TensorBoard.
+            """
+            super().__init__()
+
+        def _on_training_start(self) -> None:
+            hparam_dict = {
+                "algorithm": self.model.__class__.__name__,
+                "learning rate": self.model.learning_rate,
+                "gamma": self.model.gamma,
+            }
+            # define the metrics that will appear in the `HPARAMS` Tensorboard tab by referencing their tag
+            # Tensorbaord will find & display metrics from the `SCALARS` tab
+            metric_dict = {
+                "rollout/ep_len_mean": 0,
+                "train/value_loss": 0,
+            }
+            self.logger.record(
+                "hparams",
+                HParam(hparam_dict, metric_dict),
+                exclude=("stdout", "log", "json", "csv"),
+            )
+
+        def _on_step(self) -> bool:
+            return True
+
+
+    model = A2C("MlpPolicy", "CartPole-v1", tensorboard_log="runs/", verbose=1)
+    model.learn(total_timesteps=int(5e4), callback=HParamCallback())
 
 Directly Accessing The Summary Writer
 -------------------------------------
@@ -248,6 +307,13 @@ can get direct access to the underlying SummaryWriter in a callback:
 
 .. warning::
     This is method is not recommended and should only be used by advanced users.
+
+.. note::
+
+  If you want a concrete example, you can watch `how to log lap time with donkeycar env <https://www.youtube.com/watch?v=v8j2bpcE4Rg&t=4619s>`_,
+  or read the code in the `RL Zoo <https://github.com/DLR-RM/rl-baselines3-zoo/blob/feat/gym-donkeycar/rl_zoo3/callbacks.py#L251-L270>`_.
+  You might also want to take a look at `issue #1160 <https://github.com/DLR-RM/stable-baselines3/issues/1160>`_ and `issue #1219 <https://github.com/DLR-RM/stable-baselines3/issues/1219>`_.
+
 
 .. code-block:: python
 
@@ -272,6 +338,11 @@ can get direct access to the underlying SummaryWriter in a callback:
 
         def _on_step(self) -> bool:
             if self.n_calls % self._log_freq == 0:
+                # You can have access to info from the env using self.locals.
+                # for instance, when using one env (index 0 of locals["infos"]):
+                # lap_count = self.locals["infos"][0]["lap_count"]
+                # self.tb_formatter.writer.add_scalar("train/lap_count", lap_count, self.num_timesteps)
+
                 self.tb_formatter.writer.add_text("direct_access", "this is a value", self.num_timesteps)
                 self.tb_formatter.writer.flush()
 

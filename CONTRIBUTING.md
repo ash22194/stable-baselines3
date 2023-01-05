@@ -38,7 +38,8 @@ pip install -e .[docs,tests,extra]
 
 ## Codestyle
 
-We are using [black codestyle](https://github.com/psf/black) (max line length of 127 characters) together with [isort](https://github.com/timothycrosley/isort) to sort the imports.
+We use [black codestyle](https://github.com/psf/black) (max line length of 127 characters) together with [isort](https://github.com/timothycrosley/isort) to sort the imports.
+For the documentation, we use the default line length of 88 characters per line.
 
 **Please run `make format`** to reformat your code. You can check the codestyle using `make check-codestyle` and `make lint`.
 
@@ -78,7 +79,7 @@ To run tests with `pytest`:
 make pytest
 ```
 
-Type checking with `pytype`:
+Type checking with `pytype` and `mypy`:
 
 ```
 make type
@@ -91,7 +92,7 @@ make check-codestyle
 make lint
 ```
 
-To run `pytype`, `format` and `lint` in one command:
+To run `type`, `format` and `lint` in one command:
 ```
 make commit-checks
 ```

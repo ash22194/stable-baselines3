@@ -2,13 +2,15 @@ import glob
 import os
 import platform
 import random
+import re
 from collections import deque
 from itertools import zip_longest
-from typing import Dict, Iterable, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import gym
 import numpy as np
 import torch as th
+from gym import spaces
 
 import stable_baselines3 as sb3
 
@@ -67,8 +69,8 @@ def update_learning_rate(optimizer: th.optim.Optimizer, learning_rate: float) ->
     Update the learning rate for a given optimizer.
     Useful when doing linear schedule.
 
-    :param optimizer:
-    :param learning_rate:
+    :param optimizer: Pytorch optimizer
+    :param learning_rate: New learning rate value
     """
     for param_group in optimizer.param_groups:
         param_group["lr"] = learning_rate
@@ -79,8 +81,8 @@ def get_schedule_fn(value_schedule: Union[Schedule, float, int]) -> Schedule:
     Transform (if needed) learning rate and clip range (for PPO)
     to callable.
 
-    :param value_schedule:
-    :return:
+    :param value_schedule: Constant value of schedule function
+    :return: Schedule function (can return constant value)
     """
     # If the passed schedule is a float
     # create a constant function
@@ -104,7 +106,7 @@ def get_linear_fn(start: float, end: float, end_fraction: float) -> Schedule:
     :params end_fraction: fraction of ``progress_remaining``
         where end is reached e.g 0.1 then end is reached after 10%
         of the complete training process.
-    :return:
+    :return: Linear schedule function.
     """
 
     def func(progress_remaining: float) -> float:
@@ -121,8 +123,8 @@ def constant_fn(val: float) -> Schedule:
     Create a function that returns a constant
     It is useful for learning rate schedule (to avoid code duplication)
 
-    :param val:
-    :return:
+    :param val: constant value
+    :return: Constant schedule function.
     """
 
     def func(_):
@@ -139,7 +141,7 @@ def get_device(device: Union[th.device, str] = "auto") -> th.device:
     By default, it tries to use the gpu.
 
     :param device: One for 'auto', 'cuda', 'cpu'
-    :return:
+    :return: Supported Pytorch device
     """
     # Cuda by default
     if device == "auto":
@@ -182,7 +184,7 @@ def configure_logger(
     """
     Configure the logger's outputs.
 
-    :param verbose: the verbosity level: 0 no output, 1 info, 2 debug
+    :param verbose: Verbosity level: 0 for no output, 1 for the standard output to be part of the logger outputs
     :param tensorboard_log: the log location for tensorboard (if None, no logging)
     :param tb_log_name: tensorboard log
     :param reset_num_timesteps:  Whether the ``num_timesteps`` attribute is reset or not.
@@ -210,7 +212,7 @@ def configure_logger(
     return configure(save_path, format_strings=format_strings)
 
 
-def check_for_correct_spaces(env: GymEnv, observation_space: gym.spaces.Space, action_space: gym.spaces.Space) -> None:
+def check_for_correct_spaces(env: GymEnv, observation_space: spaces.Space, action_space: spaces.Space) -> None:
     """
     Checks that the environment has same spaces as provided ones. Used by BaseAlgorithm to check if
     spaces match after loading the model with given env.
@@ -228,7 +230,7 @@ def check_for_correct_spaces(env: GymEnv, observation_space: gym.spaces.Space, a
         raise ValueError(f"Action spaces do not match: {action_space} != {env.action_space}")
 
 
-def is_vectorized_box_observation(observation: np.ndarray, observation_space: gym.spaces.Box) -> bool:
+def is_vectorized_box_observation(observation: np.ndarray, observation_space: spaces.Box) -> bool:
     """
     For box observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -249,7 +251,7 @@ def is_vectorized_box_observation(observation: np.ndarray, observation_space: gy
         )
 
 
-def is_vectorized_discrete_observation(observation: Union[int, np.ndarray], observation_space: gym.spaces.Discrete) -> bool:
+def is_vectorized_discrete_observation(observation: Union[int, np.ndarray], observation_space: spaces.Discrete) -> bool:
     """
     For discrete observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -269,7 +271,7 @@ def is_vectorized_discrete_observation(observation: Union[int, np.ndarray], obse
         )
 
 
-def is_vectorized_multidiscrete_observation(observation: np.ndarray, observation_space: gym.spaces.MultiDiscrete) -> bool:
+def is_vectorized_multidiscrete_observation(observation: np.ndarray, observation_space: spaces.MultiDiscrete) -> bool:
     """
     For multidiscrete observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -290,7 +292,7 @@ def is_vectorized_multidiscrete_observation(observation: np.ndarray, observation
         )
 
 
-def is_vectorized_multibinary_observation(observation: np.ndarray, observation_space: gym.spaces.MultiBinary) -> bool:
+def is_vectorized_multibinary_observation(observation: np.ndarray, observation_space: spaces.MultiBinary) -> bool:
     """
     For multibinary observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -299,19 +301,19 @@ def is_vectorized_multibinary_observation(observation: np.ndarray, observation_s
     :param observation_space: the observation space
     :return: whether the given observation is vectorized or not
     """
-    if observation.shape == (observation_space.n,):
+    if observation.shape == observation_space.shape:
         return False
-    elif len(observation.shape) == 2 and observation.shape[1] == observation_space.n:
+    elif len(observation.shape) == len(observation_space.shape) + 1 and observation.shape[1:] == observation_space.shape:
         return True
     else:
         raise ValueError(
             f"Error: Unexpected observation shape {observation.shape} for MultiBinary "
-            + f"environment, please use ({observation_space.n},) or "
+            + f"environment, please use {observation_space.shape} or "
             + f"(n_env, {observation_space.n}) for the observation shape."
         )
 
 
-def is_vectorized_dict_observation(observation: np.ndarray, observation_space: gym.spaces.Dict) -> bool:
+def is_vectorized_dict_observation(observation: np.ndarray, observation_space: spaces.Dict) -> bool:
     """
     For dict observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -355,7 +357,7 @@ def is_vectorized_dict_observation(observation: np.ndarray, observation_space: g
         )
 
 
-def is_vectorized_observation(observation: Union[int, np.ndarray], observation_space: gym.spaces.Space) -> bool:
+def is_vectorized_observation(observation: Union[int, np.ndarray], observation_space: spaces.Space) -> bool:
     """
     For every observation type, detects and validates the shape,
     then returns whether or not the observation is vectorized.
@@ -366,11 +368,11 @@ def is_vectorized_observation(observation: Union[int, np.ndarray], observation_s
     """
 
     is_vec_obs_func_dict = {
-        gym.spaces.Box: is_vectorized_box_observation,
-        gym.spaces.Discrete: is_vectorized_discrete_observation,
-        gym.spaces.MultiDiscrete: is_vectorized_multidiscrete_observation,
-        gym.spaces.MultiBinary: is_vectorized_multibinary_observation,
-        gym.spaces.Dict: is_vectorized_dict_observation,
+        spaces.Box: is_vectorized_box_observation,
+        spaces.Discrete: is_vectorized_discrete_observation,
+        spaces.MultiDiscrete: is_vectorized_multidiscrete_observation,
+        spaces.MultiBinary: is_vectorized_multibinary_observation,
+        spaces.Dict: is_vectorized_dict_observation,
     }
 
     for space_type, is_vec_obs_func in is_vec_obs_func_dict.items():
@@ -386,10 +388,23 @@ def safe_mean(arr: Union[np.ndarray, list, deque]) -> np.ndarray:
     Compute the mean of an array if there is at least one element.
     For empty array, return NaN. It is used for logging only.
 
-    :param arr:
+    :param arr: Numpy array or list of values
     :return:
     """
     return np.nan if len(arr) == 0 else np.mean(arr)
+
+
+def get_parameters_by_name(model: th.nn.Module, included_names: Iterable[str]) -> List[th.Tensor]:
+    """
+    Extract parameters from the state dict of ``model``
+    if the name contains one of the strings in ``included_names``.
+
+    :param model: the model where the parameters come from.
+    :param included_names: substrings of names to include.
+    :return: List of parameters values (Pytorch tensors)
+        that matches the queried names.
+    """
+    return [param for name, param in model.state_dict().items() if any([key in name for key in included_names])]
 
 
 def zip_strict(*iterables: Iterable) -> Iterable:
@@ -411,8 +426,8 @@ def zip_strict(*iterables: Iterable) -> Iterable:
 
 
 def polyak_update(
-    params: Iterable[th.nn.Parameter],
-    target_params: Iterable[th.nn.Parameter],
+    params: Iterable[th.Tensor],
+    target_params: Iterable[th.Tensor],
     tau: float,
 ) -> None:
     """
@@ -448,9 +463,9 @@ def obs_as_tensor(
     :return: PyTorch tensor of the observation on a desired device.
     """
     if isinstance(obs, np.ndarray):
-        return th.as_tensor(obs).to(device)
+        return th.as_tensor(obs, device=device)
     elif isinstance(obs, dict):
-        return {key: th.as_tensor(_obs).to(device) for (key, _obs) in obs.items()}
+        return {key: th.as_tensor(_obs, device=device) for (key, _obs) in obs.items()}
     else:
         raise Exception(f"Unrecognized type of observation {type(obs)}")
 
@@ -492,7 +507,9 @@ def get_system_info(print_info: bool = True) -> Tuple[Dict[str, str], str]:
         and a formatted string.
     """
     env_info = {
-        "OS": f"{platform.platform()} {platform.version()}",
+        # In OS, a regex is used to add a space between a "#" and a number to avoid
+        # wrongly linking to another issue on GitHub. Example: turn "#42" to "# 42".
+        "OS": re.sub(r"#(\d)", r"# \1", f"{platform.platform()} {platform.version()}"),
         "Python": platform.python_version(),
         "Stable-Baselines3": sb3.__version__,
         "PyTorch": th.__version__,
@@ -502,7 +519,7 @@ def get_system_info(print_info: bool = True) -> Tuple[Dict[str, str], str]:
     }
     env_info_str = ""
     for key, value in env_info.items():
-        env_info_str += f"{key}: {value}\n"
+        env_info_str += f"- {key}: {value}\n"
     if print_info:
         print(env_info_str)
     return env_info, env_info_str

@@ -10,7 +10,7 @@ class ActionNoise(ABC):
     The action noise base class
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
 
     def reset(self) -> None:
@@ -105,8 +105,8 @@ class VectorizedActionNoise(ActionNoise):
         try:
             self.n_envs = int(n_envs)
             assert self.n_envs > 0
-        except (TypeError, AssertionError):
-            raise ValueError(f"Expected n_envs={n_envs} to be positive integer greater than 0")
+        except (TypeError, AssertionError) as e:
+            raise ValueError(f"Expected n_envs={n_envs} to be positive integer greater than 0") from e
 
         self.base_noise = base_noise
         self.noises = [copy.deepcopy(self.base_noise) for _ in range(n_envs)]

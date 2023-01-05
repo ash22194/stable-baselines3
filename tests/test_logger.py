@@ -1,11 +1,14 @@
 import os
+import sys
 import time
 from typing import Sequence
+from unittest import mock
 
 import gym
 import numpy as np
 import pytest
 import torch as th
+from gym import spaces
 from matplotlib import pyplot as plt
 from pandas.errors import EmptyDataError
 
@@ -16,6 +19,7 @@ from stable_baselines3.common.logger import (
     CSVOutputFormat,
     Figure,
     FormatUnsupportedError,
+    HParam,
     HumanOutputFormat,
     Image,
     Logger,
@@ -295,6 +299,19 @@ def test_report_figure_to_unsupported_format_raises_error(tmp_path, unsupported_
     writer.close()
 
 
+@pytest.mark.parametrize("unsupported_format", ["stdout", "log", "json", "csv"])
+def test_report_hparam_to_unsupported_format_raises_error(tmp_path, unsupported_format):
+    writer = make_output_format(unsupported_format, tmp_path)
+
+    with pytest.raises(FormatUnsupportedError) as exec_info:
+        hparam_dict = {"learning rate": np.random.random()}
+        metric_dict = {"train/value_loss": 0}
+        hparam = HParam(hparam_dict=hparam_dict, metric_dict=metric_dict)
+        writer.write({"hparam": hparam}, key_excluded={"hparam": ()})
+    assert unsupported_format in str(exec_info.value)
+    writer.close()
+
+
 def test_key_length(tmp_path):
     writer = make_output_format("stdout", tmp_path)
     assert writer.max_length == 36
@@ -334,8 +351,8 @@ class TimeDelayEnv(gym.Env):
     def __init__(self, delay: float = 0.01):
         super().__init__()
         self.delay = delay
-        self.observation_space = gym.spaces.Box(low=-20.0, high=20.0, shape=(4,), dtype=np.float32)
-        self.action_space = gym.spaces.Discrete(2)
+        self.observation_space = spaces.Box(low=-20.0, high=20.0, shape=(4,), dtype=np.float32)
+        self.action_space = spaces.Discrete(2)
 
     def reset(self):
         return self.observation_space.sample()
@@ -381,3 +398,24 @@ def test_fps_logger(tmp_path, algo):
     # third time, FPS should be the same
     model.learn(100, log_interval=1, reset_num_timesteps=False)
     assert max_fps / 10 <= logger.name_to_value["time/fps"] <= max_fps
+
+
+@pytest.mark.parametrize("algo", [A2C, DQN])
+def test_fps_no_div_zero(algo):
+    """Set time to constant and train algorithm to check no division by zero error.
+
+    Time can appear to be constant during short runs on platforms with low-precision
+    timers. We should avoid division by zero errors e.g. when computing FPS in
+    this situation."""
+    with mock.patch("time.time", lambda: 42.0):
+        with mock.patch("time.time_ns", lambda: 42.0):
+            model = algo("MlpPolicy", "CartPole-v1")
+            model.learn(total_timesteps=100)
+
+
+def test_human_output_format_no_crash_on_same_keys_different_tags():
+    o = HumanOutputFormat(sys.stdout, max_length=60)
+    o.write(
+        {"key1/foo": "value1", "key1/bar": "value2", "key2/bizz": "value3", "key2/foo": "value4"},
+        {"key1/foo": None, "key2/bizz": None, "key1/bar": None, "key2/foo": None},
+    )
