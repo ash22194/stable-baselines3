@@ -11,10 +11,30 @@ from scipy.linalg import solve_continuous_are
 from scipy.io import loadmat, savemat
 from scipy.interpolate import interpn
 
+from typing import Callable
 from systems.quadcopter import Quadcopter
 from stable_baselines3 import A2C, PPO, DDPG
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
+
+def linear_schedule(initial_value: float) -> Callable[[float], float]:
+    """
+    Linear learning rate schedule.
+
+    :param initial_value: Initial learning rate.
+    :return: schedule that computes
+      current learning rate depending on remaining progress
+    """
+    def func(progress_remaining: float) -> float:
+        """
+        Progress will decrease from 1 (beginning) to 0.
+
+        :param progress_remaining:
+        :return: current learning rate
+        """
+        return progress_remaining * initial_value
+
+    return func
 
 m = 0.5
 g = 9.81
@@ -27,11 +47,11 @@ g = 9.81
 sys = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
 	   'Q': np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': np.diag([0.002, 0.01, 0.01, 0.004]),\
 	   'goal': np.array([[1], [0], [0], [0], [0], [0], [0], [0], [0], [0]]), 'u0': np.array([[m*g], [0], [0], [0]]),\
-	   'T': 2, 'dt': 2.5e-3, 'lambda_': 1, 'X_DIMS': 10, 'U_DIMS': 4,\
+	   'T': 4, 'dt': 2.5e-3, 'lambda_': 1, 'X_DIMS': 10, 'U_DIMS': 4,\
 	   'x_limits': np.array([[0, 2.0], [-np.pi/2, np.pi/2], [-np.pi/2, np.pi/2], [-np.pi, np.pi], [-4, 4], [-4, 4], [-4, 4], [-3, 3], [-3, 3], [-3, 3]]),\
 	   'u_limits': np.array([[0, 2*m*g], [-0.25*m*g, 0.25*m*g], [-0.25*m*g, 0.25*m*g], [-0.125*m*g, 0.125*m*g]])}
 sys['gamma_'] = np.exp(-sys['lambda_']*sys['dt'])
-sys['I'][1,1] = 0.5*(sys['I'][0,0] + sys['I'][2,2])
+# sys['I'][1,1] = 0.5*(sys['I'][0,0] + sys['I'][2,2])
 
 fixed_start = False
 normalized_actions = True
@@ -42,11 +62,12 @@ check_env(env)
 # Compute Policy and Value function numerically
 algorithm = 'A2C'
 if (fixed_start):
-	save_path = os.path.join('examples/data/quadcopter_fixedstart', algorithm)
+	directory = 'examples/data/quadcopter_fixedstart'
 else:
-	save_path = os.path.join('examples/data/quadcopter', algorithm)
-
+	directory = 'examples/data/quadcopter'
+save_path = os.path.join(directory, algorithm)
 log_path = os.path.join(save_path, 'tb_log')
+
 files = [f for f in os.listdir(save_path) if os.path.isfile(os.path.join(save_path, f))]
 save_timestep = 0
 ff_latest = ''
@@ -59,7 +80,7 @@ for ff in files:
 		save_timestep = tt
 		ff_latest = ff
 
-total_timesteps = 12000000
+total_timesteps = 20000000
 model_load = False
 if ((save_timestep <= total_timesteps) and (save_timestep > 0)):
 	if (algorithm == 'A2C'):
@@ -74,14 +95,16 @@ else:
 	policy_std = 0.1
 	if (not normalized_actions):
 		policy_std = policy_std * sys['u_limits'][:,1]
-	n_steps = 100
+	n_steps = 256
 
 	if (algorithm == 'A2C'):
-		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[256, 256, dict(pi=[256, 256], vf=[256, 256])], log_std_init=policy_std, optimizer_class=RMSpropTFLike, optimizer_kwargs=dict(eps=1e-5))
-		model = A2C('MlpPolicy', env, gamma=sys['gamma_'], n_steps=n_steps, tensorboard_log=log_path, verbose=1, policy_kwargs=policy_kwargs)
+		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[dict(pi=[2700, 2700, 2700], vf=[2700, 2700, 2700])], log_std_init=policy_std)
+		model = A2C('MlpPolicy', env, learning_rate=linear_schedule(0.0015), use_rms_prop=True, gamma=sys['gamma_'], #gae_lambda=0.99, ent_coef=1.44e-8, vf_coef=0.993,
+					n_steps=n_steps, tensorboard_log=log_path, verbose=1, policy_kwargs=policy_kwargs)
 	elif (algorithm == 'PPO'):
-		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[256, 256, dict(pi=[256, 256], vf=[256, 256])], log_std_init=policy_std, optimizer_class=RMSpropTFLike, optimizer_kwargs=dict(eps=1e-5))
-		model = PPO('MlpPolicy', env, gamma=sys['gamma_'], n_steps=n_steps, n_epochs=1, batch_size=n_steps, clip_range_vf=None, clip_range=0.2, tensorboard_log=log_path, verbose=1, policy_kwargs=policy_kwargs)
+		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=[dict(pi=[256, 256], vf=[256, 256])], log_std_init=policy_std)
+		model = PPO('MlpPolicy', env, learning_rate=linear_schedule(0.0005), gamma=sys['gamma_'], n_steps=n_steps,
+			        n_epochs=1, batch_size=n_steps, clip_range_vf=None, clip_range=0.2, tensorboard_log=log_path, verbose=1, policy_kwargs=policy_kwargs)
 	elif (algorithm == 'DDPG'):
 		policy_kwargs = dict(activation_fn=nn.ReLU, net_arch=dict(pi=[16, 16], qf=[16, 16]))
 		model = DDPG('MlpPolicy', env, gamma=sys['gamma_'], tensorboard_log=log_path, verbose=1, policy_kwargs=policy_kwargs)
@@ -167,8 +190,8 @@ if (not run_tests):
 	plt.show()
 
 else:
-	if (os.path.isfile(os.path.join(save_path, 'test_starts.mat'))):
-		contents = loadmat(os.path.join(save_path, 'test_starts.mat'))
+	if (os.path.isfile(os.path.join(directory, 'trajectories_GA_MCTS_Heuristic_Pareto.mat'))):
+		contents = loadmat(os.path.join(directory, 'trajectories_GA_MCTS_Heuristic_Pareto.mat'))
 		starts = contents.get('starts')
 	else:
 		num_starts = 50
@@ -176,7 +199,7 @@ else:
 		for s in range(num_starts):
 			starts[:,s] = env.reset()
 
-		savemat(os.path.join(save_path, 'test_starts.mat'), {'starts' : starts})
+		savemat(os.path.join(directory, 'test_starts.mat'), {'starts' : starts})
 
 	# starts = np.array([[0.7000], [-0.3927], [-0.3927], [-0.7854], [-1.0000], [1.0000], [-0.7500], [-0.5000], [-0.5000], [-0.2500]])
 
@@ -213,7 +236,7 @@ else:
 				if done:
 					print('Start state :', start, ', Final state :', obs_full[:,0])
 					break
-		savemat(os.path.join(save_path, 'test_trajectories.mat'), {'state_trajectories' : state_trajectories,
+		savemat(os.path.join(directory, 'test_trajectories_' + algorithm + '.mat'), {'state_trajectories' : state_trajectories,
 																   'state_trajectories_full' : state_trajectories_full,
 																   'action_trajectories' : action_trajectories,
 																   'value_estimates' : value_estimates})
@@ -221,25 +244,3 @@ else:
 		# 														   'state_trajectories_full' : state_trajectories_full,
 		# 														   'action_trajectories' : action_trajectories,
 		# 														   'value_estimates' : value_estimates})
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

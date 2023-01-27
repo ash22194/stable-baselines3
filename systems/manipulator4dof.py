@@ -71,7 +71,7 @@ class Manipulator4DOF(gym.Env):
       done = False
       info = {'terminal_state': np.array([]), 'step_count' : self.step_count}
 
-    return observation, reward, done, info
+    return np.float32(observation), reward, done, info
 
   def reset(self, state=None):
 
@@ -80,7 +80,8 @@ class Manipulator4DOF(gym.Env):
             observation = np.array([np.pi, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
         else:
             observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) \
-                          + 0.2 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
+                          + 0.4 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
+            observation = np.float32(observation)
     else:
         observation = state
 

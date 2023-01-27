@@ -59,8 +59,8 @@ class Quadcopter(gym.Env):
     #     reward -= 1
 
     limit_violation = False
-    observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
-    # observation = np.minimum(10, np.maximum(-10, observation))
+    # observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
+    observation = np.minimum(10, np.maximum(-10, observation))
     self.state = observation
     self.step_count += 1
 
@@ -71,7 +71,7 @@ class Quadcopter(gym.Env):
       done = False
       info = {'terminal_state': np.array([]), 'step_count' : self.step_count}
 
-    return observation, reward, done, info
+    return np.float32(observation), reward, done, info
 
   def reset(self, state=None):
 
@@ -81,6 +81,7 @@ class Quadcopter(gym.Env):
         else:
             observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) \
                           + 0.4 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
+            observation = np.float32(observation)
     else:
         observation = state
 
