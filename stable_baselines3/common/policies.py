@@ -5,7 +5,7 @@ import copy
 import warnings
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, OrderedDict, List, Optional, Tuple, Type, TypeVar, Union
 
 import numpy as np
 import torch as th
@@ -421,6 +421,7 @@ class ActorCriticPolicy(BasePolicy):
         # TODO(antonin): update type annotation when we remove shared network support
         net_arch: Union[List[int], Dict[str, List[int]], List[Dict[str, List[int]]], None] = None,
         activation_fn: Type[nn.Module] = nn.Tanh,
+        with_scaling: bool = False,
         ortho_init: bool = True,
         use_sde: bool = False,
         log_std_init: float = 0.0,
@@ -477,6 +478,7 @@ class ActorCriticPolicy(BasePolicy):
 
         self.net_arch = net_arch
         self.activation_fn = activation_fn
+        self.with_scaling = with_scaling
         self.ortho_init = ortho_init
 
         self.share_features_extractor = share_features_extractor
@@ -560,6 +562,7 @@ class ActorCriticPolicy(BasePolicy):
             net_arch=self.net_arch,
             activation_fn=self.activation_fn,
             device=self.device,
+            with_scaling=self.with_scaling
         )
 
     def _build(self, lr_schedule: Schedule) -> None:
@@ -612,6 +615,30 @@ class ActorCriticPolicy(BasePolicy):
 
         # Setup optimizer with initial learning rate
         self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)
+
+    def get_weights(self):
+        """
+        Return a dictionary of weights : shared, policy/action_net and value_net
+        TODO: Include weights for feature extractor too? - Usually kept fixed
+        """
+        weights = OrderedDict()
+        # Shared network
+        for mm in self.mlp_extractor.shared_net.named_parameters():
+            weights['shared-net/'+mm[0]] = mm[1]
+
+        # Policy network
+        for mm in self.mlp_extractor.policy_net.named_parameters():
+            weights['policy-net/'+mm[0]] = mm[1]
+        for mm in self.action_net.named_parameters():
+            weights['policy-net/out/'+mm[0]] = mm[1]
+
+        # Value netowork
+        for mm in self.mlp_extractor.value_net.named_parameters():
+            weights['value-net/'+mm[0]] = mm[1]
+        for mm in self.value_net.named_parameters():
+            weights['value-net/out/'+mm[0]] = mm[1]
+
+        return weights
 
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """

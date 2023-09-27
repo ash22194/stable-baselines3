@@ -3,6 +3,7 @@ import os
 import numpy as np
 
 from stable_baselines3.a2c import A2C
+from stable_baselines3.a2c import A2CwReg
 from stable_baselines3.common.utils import get_system_info
 from stable_baselines3.ddpg import DDPG
 from stable_baselines3.dqn import DQN
@@ -30,6 +31,7 @@ def HER(*args, **kwargs):
 
 __all__ = [
     "A2C",
+    "A2CwReg",
     "DDPG",
     "DQN",
     "PPO",

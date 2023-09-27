@@ -40,8 +40,7 @@ class LinearSystem(gym.Env):
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf,
                                             shape=(int(1/2*self.X_DIMS*(self.X_DIMS + 3)),), dtype=np.float32)
     else:
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf,
-                                            shape=(self.X_DIMS,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=self.x_limits[:,0], high=self.x_limits[:,1], dtype=np.float32)
 
   def step(self, action):
     # If scaling actions!
@@ -76,18 +75,22 @@ class LinearSystem(gym.Env):
         done = False
         info = {'terminal_state': np.array([]), 'step_count' : self.step_count}
 
-    return observation, reward, done, info
+    return np.float32(observation), reward, done, info
 
-  def reset(self):
+  def reset(self, state=None):
     self.step_count = 0
-    self.state = self.x_limits[:,0] + np.random.rand(self.X_DIMS) * (self.x_limits[:,1] - self.x_limits[:,0])
+    if (state is None):
+      self.state = self.x_limits[:,0] + np.random.rand(self.X_DIMS) * (self.x_limits[:,1] - self.x_limits[:,0])
+    else:
+      self.state = state
+
     if (self.add_quad_feat):
         observation = self.add_quadratic_features(self.state[:,np.newaxis])
         observation = observation[:,0]
     else:
         observation = self.state
 
-    return observation  # reward, done, info can't be included
+    return np.float32(observation)  # reward, done, info can't be included
 
   def add_quadratic_features(self, x):
     z = np.zeros((int(1/2*self.X_DIMS*(self.X_DIMS + 3)), x.shape[1]))

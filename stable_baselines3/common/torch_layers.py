@@ -11,6 +11,14 @@ from stable_baselines3.common.preprocessing import get_flattened_obs_dim, is_ima
 from stable_baselines3.common.type_aliases import TensorDict
 from stable_baselines3.common.utils import get_device
 
+class ScaleLayer(nn.Module):
+    def __init__(self, in_features: int, init_value=1.0):
+        super().__init__()
+        self.scale = nn.parameter.Parameter(init_value * th.ones(in_features, requires_grad=True))
+
+    def forward(self, input):
+        return input * self.scale
+
 
 class BaseFeaturesExtractor(nn.Module):
     """
@@ -184,6 +192,7 @@ class MlpExtractor(nn.Module):
         net_arch: Union[Dict[str, List[int]], List[Union[int, Dict[str, List[int]]]]],
         activation_fn: Type[nn.Module],
         device: Union[th.device, str] = "auto",
+        with_scaling: bool = False
     ) -> None:
         super().__init__()
         device = get_device(device)
@@ -215,6 +224,8 @@ class MlpExtractor(nn.Module):
                 if isinstance(layer, int):  # Check that this is a shared layer
                     shared_net.append(nn.Linear(last_layer_dim_shared, layer))  # add linear of size layer
                     shared_net.append(activation_fn())
+                    if (with_scaling):
+                        shared_net.append(ScaleLayer(layer))
                     last_layer_dim_shared = layer
                 else:
                     assert isinstance(layer, dict), "Error: the net_arch list can only contain ints and dicts"
@@ -236,12 +247,16 @@ class MlpExtractor(nn.Module):
                 assert isinstance(pi_layer_size, int), "Error: net_arch[-1]['pi'] must only contain integers."
                 policy_net.append(nn.Linear(last_layer_dim_pi, pi_layer_size))
                 policy_net.append(activation_fn())
+                if (with_scaling):
+                    policy_net.append(ScaleLayer(pi_layer_size))
                 last_layer_dim_pi = pi_layer_size
 
             if vf_layer_size is not None:
                 assert isinstance(vf_layer_size, int), "Error: net_arch[-1]['vf'] must only contain integers."
                 value_net.append(nn.Linear(last_layer_dim_vf, vf_layer_size))
                 value_net.append(activation_fn())
+                if (with_scaling):
+                    value_net.append(ScaleLayer(vf_layer_size))
                 last_layer_dim_vf = vf_layer_size
 
         # Save dim, used to create the distributions
