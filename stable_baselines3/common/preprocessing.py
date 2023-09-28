@@ -3,7 +3,7 @@ from typing import Dict, Tuple, Union
 
 import numpy as np
 import torch as th
-from gym import spaces
+from gymnasium import spaces
 from torch.nn import functional as F
 
 
@@ -112,7 +112,7 @@ def preprocess_obs(
 
     elif isinstance(observation_space, spaces.Discrete):
         # One hot encoding and convert to float to avoid errors
-        return F.one_hot(obs.long(), num_classes=observation_space.n).float()
+        return F.one_hot(obs.long(), num_classes=int(observation_space.n)).float()
 
     elif isinstance(observation_space, spaces.MultiDiscrete):
         # Tensor concatenation of one hot encodings of each Categorical sub-space
@@ -158,10 +158,7 @@ def get_obs_shape(
         return (int(len(observation_space.nvec)),)
     elif isinstance(observation_space, spaces.MultiBinary):
         # Number of binary features
-        if type(observation_space.n) in [tuple, list, np.ndarray]:
-            return tuple(observation_space.n)
-        else:
-            return (int(observation_space.n),)
+        return observation_space.shape
     elif isinstance(observation_space, spaces.Dict):
         return {key: get_obs_shape(subspace) for (key, subspace) in observation_space.spaces.items()}  # type: ignore[misc]
 
@@ -205,18 +202,20 @@ def get_action_dim(action_space: spaces.Space) -> int:
         return int(len(action_space.nvec))
     elif isinstance(action_space, spaces.MultiBinary):
         # Number of binary actions
+        assert isinstance(
+            action_space.n, int
+        ), "Multi-dimensional MultiBinary action space is not supported. You can flatten it instead."
         return int(action_space.n)
     else:
         raise NotImplementedError(f"{action_space} action space is not supported")
 
 
-def check_for_nested_spaces(obs_space: spaces.Space):
+def check_for_nested_spaces(obs_space: spaces.Space) -> None:
     """
     Make sure the observation space does not have nested spaces (Dicts/Tuples inside Dicts/Tuples).
     If so, raise an Exception informing that there is no support for this.
 
     :param obs_space: an observation space
-    :return:
     """
     if isinstance(obs_space, (spaces.Dict, spaces.Tuple)):
         sub_spaces = obs_space.spaces.values() if isinstance(obs_space, spaces.Dict) else obs_space.spaces

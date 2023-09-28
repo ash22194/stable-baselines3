@@ -44,13 +44,14 @@ Main Features
    guide/algos
    guide/examples
    guide/vec_envs
-   guide/custom_env
    guide/custom_policy
+   guide/custom_env
    guide/callbacks
    guide/tensorboard
    guide/integrations
    guide/rl_zoo
    guide/sb3_contrib
+   guide/sbx
    guide/imitation
    guide/migration
    guide/checking_nan

@@ -8,13 +8,14 @@ import zipfile
 from collections import OrderedDict
 from copy import deepcopy
 
-import gym
+import gymnasium as gym
 import numpy as np
 import pytest
 import torch as th
 
 from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC, TD3
 from stable_baselines3.common.base_class import BaseAlgorithm
+from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.envs import FakeImageEnv, IdentityEnv, IdentityEnvBox
 from stable_baselines3.common.save_util import load_from_pkl, open_path, save_to_pkl
 from stable_baselines3.common.utils import get_device
@@ -358,7 +359,12 @@ def test_save_load_replay_buffer(tmp_path, model_class):
     old_replay_buffer = deepcopy(model.replay_buffer)
     model.save_replay_buffer(path)
     model.replay_buffer = None
-    model.load_replay_buffer(path)
+    for device in ["cpu", "cuda"]:
+        # Manually force device to check that the replay buffer device
+        # is correctly updated
+        model.device = th.device(device)
+        model.load_replay_buffer(path)
+        assert model.replay_buffer.device.type == model.device.type
 
     assert np.allclose(old_replay_buffer.observations, model.replay_buffer.observations)
     assert np.allclose(old_replay_buffer.actions, model.replay_buffer.actions)
@@ -648,7 +654,6 @@ def test_open_file_str_pathlib(tmp_path, pathtype):
 
 
 def test_open_file(tmp_path):
-
     # path must much the type
     with pytest.raises(TypeError):
         open_path(123, None, None, None)
@@ -675,8 +680,8 @@ def test_open_file(tmp_path):
     buff = io.BytesIO()
     assert buff.writable()
     assert buff.readable() is ("w" == "w")
-    _ = open_path(buff, "w")
-    assert _ is buff
+    opened_buffer = open_path(buff, "w")
+    assert opened_buffer is buff
     with pytest.raises(ValueError):
         buff.close()
         open_path(buff, "w")
@@ -731,3 +736,14 @@ def test_load_invalid_object(tmp_path):
     with warnings.catch_warnings(record=True) as record:
         PPO.load(path, custom_objects=dict(learning_rate=lambda _: 1.0))
     assert len(record) == 0
+
+
+def test_dqn_target_update_interval(tmp_path):
+    # `target_update_interval` should not change when reloading the model. See GH Issue #1373.
+    env = make_vec_env(env_id="CartPole-v1", n_envs=2)
+    model = DQN("MlpPolicy", env, verbose=1, target_update_interval=100)
+    model.save(tmp_path / "dqn_cartpole")
+    del model
+    model = DQN.load(tmp_path / "dqn_cartpole")
+    os.remove(tmp_path / "dqn_cartpole.zip")
+    assert model.target_update_interval == 100

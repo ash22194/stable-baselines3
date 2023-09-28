@@ -119,23 +119,18 @@ A child callback is for instance :ref:`StopTrainingOnRewardThreshold <StopTraini
         """
         Base class for triggering callback on event.
 
-        :param callback: (Optional[BaseCallback]) Callback that will be called
-            when an event is triggered.
+        :param callback: Callback that will be called when an event is triggered.
         :param verbose: Verbosity level: 0 for no output, 1 for info messages, 2 for debug messages
         """
-        def __init__(self, callback: Optional[BaseCallback] = None, verbose: int = 0):
-            super(EventCallback, self).__init__(verbose=verbose)
+        def __init__(self, callback: BaseCallback, verbose: int = 0):
+            super().__init__(verbose=verbose)
             self.callback = callback
             # Give access to the parent
-            if callback is not None:
-                self.callback.parent = self
+            self.callback.parent = self
         ...
 
         def _on_event(self) -> bool:
-            if self.callback is not None:
-                return self.callback()
-            return True
-
+            return self.callback()
 
 
 Callback Collection
@@ -210,7 +205,7 @@ It will save the best model if ``best_model_save_path`` folder is specified and 
 
 .. code-block:: python
 
-    import gym
+    import gymnasium as gym
 
     from stable_baselines3 import SAC
     from stable_baselines3.common.callbacks import EvalCallback
@@ -260,7 +255,7 @@ Alternatively, you can pass directly a list of callbacks to the ``learn()`` meth
 
 .. code-block:: python
 
-    import gym
+    import gymnasium as gym
 
     from stable_baselines3 import SAC
     from stable_baselines3.common.callbacks import CallbackList, CheckpointCallback, EvalCallback
@@ -290,7 +285,7 @@ It must be used with the :ref:`EvalCallback` and use the event triggered by a ne
 
 .. code-block:: python
 
-    import gym
+    import gymnasium as gym
 
     from stable_baselines3 import SAC
     from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
@@ -322,7 +317,7 @@ An :ref:`EventCallback` that will trigger its child callback every ``n_steps`` t
 
 .. code-block:: python
 
-  import gym
+  import gymnasium as gym
 
   from stable_baselines3 import PPO
   from stable_baselines3.common.callbacks import CheckpointCallback, EveryNTimesteps
@@ -379,7 +374,7 @@ It must be used with the :ref:`EvalCallback` and use the event triggered after e
 
 .. code-block:: python
 
-    import gym
+    import gymnasium as gym
 
     from stable_baselines3 import SAC
     from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnNoModelImprovement

@@ -73,7 +73,7 @@ Goals of this repository:
 
 Github repo: https://github.com/DLR-RM/rl-baselines3-zoo
 
-Documentation: https://stable-baselines3.readthedocs.io/en/master/guide/rl_zoo.html
+Documentation: https://rl-baselines3-zoo.readthedocs.io/en/master/
 
 ## SB3-Contrib: Experimental RL Features
 
@@ -83,13 +83,19 @@ This allows SB3 to maintain a stable and compact core, while still providing the
 
 Documentation is available online: [https://sb3-contrib.readthedocs.io/](https://sb3-contrib.readthedocs.io/)
 
+## Stable-Baselines Jax (SBX)
+
+[Stable Baselines Jax (SBX)](https://github.com/araffin/sbx) is a proof of concept version of Stable-Baselines3 in Jax.
+
+It provides a minimal number of features compared to SB3 but can be much faster (up to 20x times!): https://twitter.com/araffin2/status/1590714558628253698
+
 
 ## Installation
 
-**Note:** Stable-Baselines3 supports PyTorch >= 1.11
+**Note:** Stable-Baselines3 supports PyTorch >= 1.13
 
 ### Prerequisites
-Stable Baselines3 requires Python 3.7+.
+Stable Baselines3 requires Python 3.8+.
 
 #### Windows 10
 
@@ -104,7 +110,7 @@ pip install stable-baselines3[extra]
 **Note:** Some shells such as Zsh require quotation marks around brackets, i.e. `pip install 'stable-baselines3[extra]'` ([More Info](https://stackoverflow.com/a/30539963)).
 
 This includes an optional dependencies like Tensorboard, OpenCV or `atari-py` to train on atari games. If you do not need those, you can use:
-```
+```sh
 pip install stable-baselines3
 ```
 
@@ -117,7 +123,7 @@ Most of the code in the library tries to follow a sklearn-like syntax for the Re
 
 Here is a quick example of how to train and run PPO on a cartpole environment:
 ```python
-import gym
+import gymnasium as gym
 
 from stable_baselines3 import PPO
 
@@ -139,7 +145,7 @@ for i in range(1000):
 env.close()
 ```
 
-Or just train a model with a one liner if [the environment is registered in Gym](https://github.com/openai/gym/wiki/Environments) and if [the policy is registered](https://stable-baselines3.readthedocs.io/en/master/guide/custom_policy.html):
+Or just train a model with a one liner if [the environment is registered in Gymnasium](https://gymnasium.farama.org/tutorials/gymnasium_basics/environment_creation/#registering-envs) and if [the policy is registered](https://stable-baselines3.readthedocs.io/en/master/guide/custom_policy.html):
 
 ```python
 from stable_baselines3 import PPO
@@ -173,7 +179,7 @@ All the following examples can be executed online using Google Colab notebooks:
 | A2C   | :x: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: |
 | DDPG  | :x: | :heavy_check_mark: | :x:                | :x:                 | :x:                | :heavy_check_mark: |
 | DQN   | :x: | :x: | :heavy_check_mark: | :x:                 | :x:                | :heavy_check_mark: |
-| HER   | :x: | :heavy_check_mark: | :heavy_check_mark: | :x:                 | :x:                | :x: |
+| HER   | :x: | :heavy_check_mark: | :heavy_check_mark: | :x: | :x: | :heavy_check_mark: |
 | PPO   | :x: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:  | :heavy_check_mark: | :heavy_check_mark: |
 | QR-DQN<sup>[1](#f1)</sup>  | :x: | :x: | :heavy_check_mark: | :x:                 | :x:                | :heavy_check_mark: |
 | RecurrentPPO<sup>[1](#f1)</sup>   | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark: | :heavy_check_mark:  | :heavy_check_mark: | :heavy_check_mark: |
@@ -194,21 +200,33 @@ Actions `gym.spaces`:
 
 
 ## Testing the installation
-All unit tests in stable baselines3 can be run using `pytest` runner:
+### Install dependencies
+```sh
+pip install -e .[docs,tests,extra]
 ```
-pip install pytest pytest-cov
+### Run tests
+All unit tests in stable baselines3 can be run using `pytest` runner:
+```sh
 make pytest
+```
+To run a single test file:
+```sh
+python3 -m pytest -v tests/test_env_checker.py
+```
+To run a single test:
+```sh
+python3 -m pytest -v -k 'test_check_env_dict_action'
 ```
 
 You can also do a static type check using `pytype` and `mypy`:
-```
+```sh
 pip install pytype mypy
 make type
 ```
 
-Codestyle check with `flake8`:
-```
-pip install flake8
+Codestyle check with `ruff`:
+```sh
+pip install ruff
 make lint
 ```
 
