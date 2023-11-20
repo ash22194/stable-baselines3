@@ -1,0 +1,35 @@
+environment:
+  name: CartPoleCustom-v0
+  num_envs: 1
+  environment_kwargs:
+    normalized_actions: true
+    fixed_start: false
+    expand_limits: false
+
+algorithm:
+  name: PPO
+  total_timesteps: 5000000
+  algorithm_kwargs:
+    gamma: 0.994
+    gae_lambda: 0.950543866660061
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+    learning_rate: 0.0014778590250985244
+    learning_rate_schedule:
+      type: lin
+
+    n_steps: 50
+    n_epochs: 1
+    batch_size: 50
+    clip_range: 0.2
+
+policy:
+  save_prefix: model
+  policy_kwargs:
+    net_arch:
+      pi: [32, 32]
+      vf: [32, 32]
+    activation_fn: relu
+    optimizer_class: rmsprop
+    log_std_init: -2.3
+    ortho_init: true

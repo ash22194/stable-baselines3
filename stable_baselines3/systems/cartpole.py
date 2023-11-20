@@ -1,15 +1,20 @@
-import gym
-from gym import spaces
-from ipdb import set_trace
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
 
 class CartPole(gym.Env):
   """Custom Environment that follows gym interface"""
   metadata = {'render.modes': ['human']}
 
-  def __init__(self, sys, fixed_start=False, normalized_actions=False):
-    super(CartPole, self).__init__()
+  def __init__(self, sys=None, fixed_start=False, normalized_actions=True, expand_limits=False):
+    # super(CartPole, self).__init__()
     # Define model paramters
+    if (sys is None):
+      sys = {'mc': 5, 'mp': 1, 'l': 0.9, 'g': 9.81, 'Q': np.diag([25, 0.02, 25, 0.02]), 'R': np.diag([0.001, 0.001]),\
+	          'goal': np.array([[0], [0], [np.pi], [0]]), 'u0': np.zeros((2,1)), 'T': 4, 'dt': 2e-3, 'lambda_': 3, 'X_DIMS': 4, 'U_DIMS': 2,\
+	          'x_limits': np.array([[-1.5, 1.5], [-3, 3], [0, 2*np.pi], [-3, 3]]), 'u_limits': np.array([[-9, 9], [-9, 9]])}
+      sys['gamma_'] = np.exp(-sys['lambda_']*sys['dt'])
+
     self.X_DIMS = sys['X_DIMS']
     self.U_DIMS = sys['U_DIMS']
     self.goal = sys['goal']
@@ -27,7 +32,8 @@ class CartPole(gym.Env):
     self.g = sys['g']
     self.fixed_start = fixed_start
     self.normalized_actions = normalized_actions
-    self.reset()
+    self.expand_limits = expand_limits
+    # self.reset()
 
     # Define action and observation space
     # They must be gym.spaces objects
@@ -51,39 +57,46 @@ class CartPole(gym.Env):
 
     observation = self.dyn_rk4(x, a, self.dt)
     observation = observation[:,0]
+    reached_goal = np.linalg.norm(observation - self.goal[:,0]) < 1e-2
     # limit_violation = (observation >= self.x_limits[:,1]).any() or (observation <= self.x_limits[:,0]).any()
     limit_violation = False
-    observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
+    if (self.expand_limits):
+      observation = np.minimum(10., np.maximum(-10., observation))
+    else:
+      observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
     self.state = observation
     self.step_count += 1
 
     # if (limit_violation):
     #   reward -= 100
 
-    if ((self.step_count >= self.horizon) or limit_violation):
+    if ((self.step_count >= self.horizon) or limit_violation or reached_goal):
       done = True
       info = {'terminal_state': self.state, 'step_count' : self.step_count}
     else:
       done = False
       info = {'terminal_state': np.array([]), 'step_count' : self.step_count}
 
-    return observation, reward, done, info
+    return np.float32(observation), reward, done, False, info
 
-  def reset(self, state=None):
+  def reset(self, seed=None, options=None, state=None):
+    super().reset(seed=seed)
     if (state is None):
         if (self.fixed_start):
             # observation = np.array([0.25, 0, 3*np.pi/4, 0.5])
             # observation = np.array([0, 0, np.pi, 0])
-            observation = np.array([0.0, 0.0, 0.0, 0.0])
+            observation = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
         else:
-            observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) \
-                          + 0.6 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
+            observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) + 0.6 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
+            observation = np.float32(observation)
     else:
         observation = state
 
     self.state = observation
     self.step_count = 0
-    return observation  # reward, done, info can't be included
+    info = {'terminal_state': np.array([]), 'step_count' : self.step_count}
+
+    return observation, info
   
   def dyn_rk4(self, x, u, dt):
     k1 = self.dyn(x, u)
@@ -121,7 +134,7 @@ class CartPole(gym.Env):
     t5 = t3**2
     t7 = mp*t5
     t8 = mc+t7
-    t9 = 1.0/t8;
+    t9 = 1.0/t8
 
     dx = np.zeros((self.X_DIMS, 1))
     dx[0,0] = x2

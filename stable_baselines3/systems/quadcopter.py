@@ -1,15 +1,26 @@
-import gym
-from gym import spaces
-from ipdb import set_trace
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
+from copy import deepcopy
 
 class Quadcopter(gym.Env):
   """Custom Environment that follows gym interface"""
-  metadata = {'render.modes': ['human']}
+  metadata = {'render_modes': ['human']}
 
-  def __init__(self, sys, fixed_start=False, normalized_actions=False):
-    super(Quadcopter, self).__init__()
+  def __init__(self, sys=None, fixed_start=False, normalized_actions=True, expand_limits=False):
+    # super(Quadcopter, self).__init__()
     # Define model paramters
+    if (sys is None):
+      m = 0.5
+      g = 9.81
+      sys = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
+            'Q': np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': np.diag([0.002, 0.01, 0.01, 0.004]),\
+            'goal': np.array([[1], [0], [0], [0], [0], [0], [0], [0], [0], [0]]), 'u0': np.array([[m*g], [0], [0], [0]]),\
+            'T': 4, 'dt': 2.5e-3, 'lambda_': 1, 'X_DIMS': 10, 'U_DIMS': 4,\
+            'x_limits': np.array([[0, 2.0], [-np.pi/2, np.pi/2], [-np.pi/2, np.pi/2], [-np.pi, np.pi], [-4, 4], [-4, 4], [-4, 4], [-3, 3], [-3, 3], [-3, 3]]),\
+            'u_limits': np.array([[0, 2*m*g], [-0.25*m*g, 0.25*m*g], [-0.25*m*g, 0.25*m*g], [-0.125*m*g, 0.125*m*g]])}
+      sys['gamma_'] = np.exp(-sys['lambda_']*sys['dt'])
+
     self.X_DIMS = sys['X_DIMS']
     self.U_DIMS = sys['U_DIMS']
     self.goal = sys['goal']
@@ -28,19 +39,18 @@ class Quadcopter(gym.Env):
     self.I = sys['I']
     self.fixed_start = fixed_start
     self.normalized_actions = normalized_actions
-    self.reset()
+    self.expand_limits = expand_limits
+    # self.reset()
 
     # Define action and observation space
     # They must be gym.spaces objects
-    # Example when unp.sing continuous actions:
+    # Example when using continuous actions:
     if (normalized_actions):
         self.action_space = spaces.Box(low=-1, high=1, shape=(self.U_DIMS,), dtype=np.float32)
     else:
-        # self.action_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.U_DIMS,), dtype=np.float32)
         self.action_space = spaces.Box(low=self.u_limits[:,0], high=self.u_limits[:,1], dtype=np.float32)
 
     self.observation_space = spaces.Box(low=self.x_limits[:,0], high=self.x_limits[:,1], dtype=np.float32)
-    # self.observation_space = spaces.Box(low=-10, high=10, shape=(self.X_DIMS,), dtype=np.float32)
 
   def step(self, action):
     # If scaling actions use this
@@ -48,9 +58,9 @@ class Quadcopter(gym.Env):
         action = 0.5*((self.u_limits[:,0] + self.u_limits[:,1]) + action*(self.u_limits[:,1] - self.u_limits[:,0]))
     a = action[:,np.newaxis]
     x = self.state[:,np.newaxis]
-    np.cost = sum((x - self.goal) * np.matmul(self.Q, x - self.goal)) + sum((a - self.u0) * np.matmul(self.R, a - self.u0))
-    np.cost = np.cost * self.dt
-    reward = -np.cost[0]
+    cost = sum((x - self.goal) * np.matmul(self.Q, x - self.goal)) + sum((a - self.u0) * np.matmul(self.R, a - self.u0))
+    cost = cost * self.dt
+    reward = -cost[0]
 
     observation = self.dyn_rk4(x, a, self.dt)
     observation = observation[:,0]
@@ -59,35 +69,40 @@ class Quadcopter(gym.Env):
     #     reward -= 1
 
     limit_violation = False
-    # observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
-    observation = np.minimum(10, np.maximum(-10, observation))
+    if (self.expand_limits):
+      observation = np.minimum(10, np.maximum(-10, observation))
+    else:
+      observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
+    
+    reached_goal = np.linalg.norm(observation - self.goal[:,0]) < 1e-2
     self.state = observation
     self.step_count += 1
 
-    if ((self.step_count >= self.horizon) or limit_violation):
+    if ((self.step_count >= self.horizon) or limit_violation or reached_goal):
       done = True
-      info = {'terminal_state': self.state, 'step_count' : self.step_count}
+      info = {'terminal_state': deepcopy(self.state), 'step_count' : deepcopy(self.step_count)}
     else:
       done = False
-      info = {'terminal_state': np.array([]), 'step_count' : self.step_count}
+      info = {'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)}
 
-    return np.float32(observation), reward, done, info
+    return np.float32(observation), reward, done, False, info
 
-  def reset(self, state=None):
-
+  def reset(self, seed=None, options=None, state=None):
+    super().reset(seed=seed)
     if (state is None):
         if (self.fixed_start):
             observation = np.array([0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
         else:
-            observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) \
-                          + 0.4 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
+            observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) + 0.4 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
             observation = np.float32(observation)
     else:
         observation = state
 
     self.state = observation
     self.step_count = 0
-    return observation  # reward, done, info can't be included
+    info = {'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)}
+
+    return observation, info
 
   def dyn_rk4(self, x, u, dt):
     k1 = self.dyn(x, u)

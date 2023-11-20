@@ -11,62 +11,12 @@ from matplotlib import colormaps as cmaps
 from scipy.linalg import solve_continuous_are
 from typing import Callable
 
-from systems.linearsystem import LinearSystem
+from stable_baselines3.systems.linearsystem import LinearSystem
 from stable_baselines3 import A2CwReg
 from stable_baselines3.common.env_checker import check_env
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import SaveEveryCallback
+from stable_baselines3.common.learning_schedules import linear_schedule
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
-
-def linear_schedule(initial_value: float) -> Callable[[float], float]:
-    """
-    Linear learning rate schedule.
-
-    :param initial_value: Initial learning rate.
-    :return: schedule that computes
-      current learning rate depending on remaining progress
-    """
-    def func(progress_remaining: float) -> float:
-        """
-        Progress will decrease from 1 (beginning) to 0.
-
-        :param progress_remaining:
-        :return: current learning rate
-        """
-        return progress_remaining * initial_value
-
-    return func
-
-class SaveEveryCallback(BaseCallback):
-    """
-    A callback to periodically save the model that derives from ``BaseCallback``.
-
-    :param verbose: (int) Verbosity level 0: not output 1: info 2: debug
-    """
-    def __init__(self, save_every_timestep, save_path, save_prefix='model', verbose=0):
-        super(SaveEveryCallback, self).__init__(verbose)
-        self.save_every_timestep = save_every_timestep
-
-        assert os.path.isdir(save_path), 'Save directory does not exist!'
-        self.save_path = save_path
-        self.save_prefix = save_prefix
-
-    def _on_training_start(self) -> None:
-        pass
-
-    def _on_rollout_start(self) -> None:
-        pass
-
-    def _on_step(self) -> bool:
-        if (((self.model.num_timesteps+1) % self.save_every_timestep) == 0):
-            self.model.save(os.path.join(self.save_path, self.save_prefix + '_' + str(self.model.num_timesteps+1)))
-
-        return True
-
-    def _on_rollout_end(self) -> None:
-        pass
-
-    def _on_training_end(self) -> None:
-        pass
 
 def plot_weights(model):
     # Visualize weights

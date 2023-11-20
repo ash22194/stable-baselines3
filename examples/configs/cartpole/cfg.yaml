@@ -1,0 +1,33 @@
+environment:
+  name: 'CartPoleCustom-v0'
+  num_envs: 1
+  environment_kwargs:
+    normalized_actions: True
+    fixed_start: False
+    expand_limits: False
+
+algorithm:
+  name: 'PPO'
+  total_timesteps: 5000000
+  algorithm_kwargs:
+    gamma: 0.994
+    gae_lambda: 0.95
+    vf_coef: 0.5
+    max_grad_norm: 0.5
+    learning_rate: 0.0005
+    learning_rate_schedule: null
+    n_steps: 100
+    n_epochs: 1
+    batch_size: 100
+    clip_range: 0.2
+
+policy:
+  save_prefix: 'model'
+  policy_kwargs:
+    net_arch:
+      pi: [64, 64]
+      vf: [64, 64]
+    activation_fn: 'relu'
+    optimizer_class: 'rmsproptflike'
+    log_std_init: -2.3
+    ortho_init: True

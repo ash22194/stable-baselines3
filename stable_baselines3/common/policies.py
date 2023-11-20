@@ -627,10 +627,6 @@ class ActorCriticPolicy(BasePolicy):
         TODO: Include weights for feature extractor too? - Usually kept fixed
         """
         weights = OrderedDict()
-        # Shared network
-        for mm in self.mlp_extractor.shared_net.named_parameters():
-            weights['shared-net/'+mm[0]] = mm[1]
-
         # Policy network
         for mm in self.mlp_extractor.policy_net.named_parameters():
             weights['policy-net/'+mm[0]] = mm[1]

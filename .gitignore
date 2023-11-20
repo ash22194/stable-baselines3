@@ -33,6 +33,8 @@ keys/
 .idea
 
 logs/
+**/data
+**/wandb
 
 .ipynb_checkpoints
 ghostdriver.log

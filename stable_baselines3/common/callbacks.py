@@ -705,3 +705,40 @@ class ProgressBarCallback(BaseCallback):
         # Flush and close progress bar
         self.pbar.refresh()
         self.pbar.close()
+
+
+class SaveEveryCallback(BaseCallback):
+	"""
+	A callback to periodically save the model that derives from ``BaseCallback``.
+
+	:param verbose: (int) Verbosity level 0: not output 1: info 2: debug
+	"""
+	def __init__(self, save_every_timestep, save_path, save_prefix='model', verbose=0):
+		super(SaveEveryCallback, self).__init__(verbose)
+		self.save_every_timestep = save_every_timestep
+
+		assert os.path.isdir(save_path), 'Save directory does not exist!'
+		self.save_path = save_path
+		self.save_prefix = save_prefix
+		self.curr_check_point_id = 0
+
+	def _on_training_start(self) -> None:
+		pass
+
+	def _on_rollout_start(self) -> None:
+		pass
+
+	def _on_step(self) -> bool:
+		check_point_id = divmod(self.model.num_timesteps+1, self.save_every_timestep)[0]
+		if (check_point_id > self.curr_check_point_id):
+			self.curr_check_point_id = check_point_id
+			save_id = check_point_id*self.save_every_timestep
+			self.model.save(os.path.join(self.save_path, self.save_prefix + '_' + str(save_id)))
+
+		return True
+
+	def _on_rollout_end(self) -> None:
+		pass
+
+	def _on_training_end(self) -> None:
+		pass

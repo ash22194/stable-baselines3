@@ -1,5 +1,5 @@
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 from ipdb import set_trace
 import numpy as np
 
@@ -8,7 +8,7 @@ class LinearSystem(gym.Env):
   metadata = {'render.modes': ['human']}
 
   def __init__(self, sys, add_quad_feat=False, normalized_actions=False):
-    super(LinearSystem, self).__init__()
+    # super(LinearSystem, self).__init__()
     # Define model paramters
     self.X_DIMS = sys['X_DIMS']
     self.U_DIMS = sys['U_DIMS']
@@ -25,7 +25,7 @@ class LinearSystem(gym.Env):
     self.u_limits = sys['u_limits']
     self.add_quad_feat = add_quad_feat
     self.normalized_actions = normalized_actions
-    self.reset()
+    # self.reset()
 
     # Define action and observation space
     # They must be gym.spaces objects
@@ -75,9 +75,10 @@ class LinearSystem(gym.Env):
         done = False
         info = {'terminal_state': np.array([]), 'step_count' : self.step_count}
 
-    return np.float32(observation), reward, done, info
+    return np.float32(observation), reward, done, False, info
 
-  def reset(self, state=None):
+  def reset(self, state=None, seed=None, options=None):
+    super().reset(seed=seed)
     self.step_count = 0
     if (state is None):
       self.state = self.x_limits[:,0] + np.random.rand(self.X_DIMS) * (self.x_limits[:,1] - self.x_limits[:,0])
@@ -89,8 +90,9 @@ class LinearSystem(gym.Env):
         observation = observation[:,0]
     else:
         observation = self.state
+    info = {'terminal_state': np.array([]), 'step_count' : self.step_count}
 
-    return np.float32(observation)  # reward, done, info can't be included
+    return np.float32(observation), info
 
   def add_quadratic_features(self, x):
     z = np.zeros((int(1/2*self.X_DIMS*(self.X_DIMS + 3)), x.shape[1]))
