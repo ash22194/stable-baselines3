@@ -5,6 +5,7 @@ import argparse
 from shutil import copyfile
 from ruamel.yaml import YAML
 from copy import deepcopy
+from deepdiff import DeepDiff
 
 import gymnasium as gym
 import numpy as np
@@ -19,6 +20,7 @@ from stable_baselines3.common.logger import configure
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
 
 import optuna
+from optuna.samplers import TPESampler
 from optuna.integration.wandb import WeightsAndBiasesCallback
 import wandb
 
@@ -189,48 +191,74 @@ def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--env_name', type=str, default='linearsystem', help='environment name')
 	parser.add_argument('--num_trials', type=int, default=10, help='number of trials to evaluate')
-	parser.add_argument('--num_jobs', type=int, default=1, help='number of parallel jobs to run (> 1 requires a DB to be running)')
 
 	args = parser.parse_args()
 	env_name = args.env_name
 	num_trials = args.num_trials
-	num_jobs = args.num_jobs
 
+	# load cfg files
+	default_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, 'cfg.yaml')
+	sweep_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, 'sweep_cfg.yaml') 
+	default_cfg = YAML().load(open(default_cfg_abs_path, 'r'))
+	sweep_cfg = YAML().load(open(sweep_cfg_abs_path, 'r'))
+	
 	# create save directory
 	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, 'sweeps')
 	if (not os.path.isdir(save_dir)):
 		os.mkdir(save_dir)
 	# find the current sweep number
-	sweep_number = 0
+	new_sweep = True
+	sweep_count = 0
 	for ff in os.listdir(save_dir):
 		if ('sweep_' in ff):
+			sweep_count += 1
 			tt = int(ff.split('sweep_')[-1])
-			if (tt > sweep_number):
-				sweep_number = tt
-	sweep_number += 1
+			
+			candidate_default_cfg = os.path.join(save_dir, 'sweep_' + str(tt), 'cfg.yaml')
+			candidate_sweep_cfg = os.path.join(save_dir, 'sweep_' + str(tt), 'sweep_cfg.yaml')
+			if (os.path.isfile(candidate_default_cfg) and os.path.isfile(candidate_sweep_cfg)):
+				candidate_default_cfg = YAML().load(open(candidate_default_cfg, 'r'))
+				candidate_sweep_cfg = YAML().load(open(candidate_sweep_cfg, 'r'))
+
+				is_not_new_default = (len(DeepDiff(candidate_default_cfg, default_cfg, ignore_order=True))==0)
+				is_not_new_sweep = (len(DeepDiff(candidate_sweep_cfg, sweep_cfg, ignore_order=True))==0)
+				if ((is_not_new_default) and (is_not_new_sweep)):
+					# append to previous sweep
+					sweep_number = tt
+					new_sweep = False
+					break
+
+	if (new_sweep):
+		sweep_number = sweep_count + 1
 	sweep_dir = os.path.join(save_dir, 'sweep_' + str(sweep_number))
-	os.mkdir(sweep_dir)
+	if (not os.path.isdir(sweep_dir)):
+		os.mkdir(sweep_dir)
 
-	# copy sweep cfg files 
-	default_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, 'cfg.yaml')
-	sweep_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, 'sweep_cfg.yaml') 
-	copyfile(default_cfg_abs_path, os.path.join(sweep_dir, 'cfg.yaml'))
-	copyfile(sweep_cfg_abs_path, os.path.join(sweep_dir, 'sweep_cfg.yaml'))
-
-	# load cfg files
-	default_cfg = YAML().load(open(default_cfg_abs_path, 'r'))
-	sweep_cfg = YAML().load(open(sweep_cfg_abs_path, 'r'))
+	# copy sweep cfg files
+	if (new_sweep):
+		copyfile(default_cfg_abs_path, os.path.join(sweep_dir, 'cfg.yaml'))
+		copyfile(sweep_cfg_abs_path, os.path.join(sweep_dir, 'sweep_cfg.yaml'))
 
 	# run trials
-	_run_trial = lambda tr: run_trial(tr, default_cfg=default_cfg, sweep_cfg=sweep_cfg, save_dir=sweep_dir)
-	# instantiate a sampler
-	study = optuna.create_study(direction="maximize")
-
+	study_name = env_name + "_sweep_" + str(sweep_number)
 	wandb.login()
-	wandb_kwargs = {"project": env_name + '_sweep_' + str(sweep_number)}
-	wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs)
-	
-	study.optimize(_run_trial, n_trials=num_trials, n_jobs=num_jobs, callbacks=[wandbc])
+	wandb_kwargs = {"project": study_name, "name": study_name}
+	wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)
+
+	@wandbc.track_in_wandb()
+	def _run_trial(tr):
+		value = run_trial(tr, default_cfg=default_cfg, sweep_cfg=sweep_cfg, save_dir=sweep_dir)
+		wandb.log({"value": value})
+		return value
+
+	study = optuna.create_study(
+		study_name=study_name,
+		direction="maximize",
+		sampler=TPESampler(),
+		storage="sqlite:///" + os.path.join(sweep_dir, 'sweep.db'),
+		load_if_exists=True
+	)
+	study.optimize(_run_trial, n_trials=num_trials, n_jobs=1, callbacks=[wandbc])
 
 if __name__=='__main__':
 	main()
