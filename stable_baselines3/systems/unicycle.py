@@ -21,7 +21,7 @@ class Unicycle(gym.Env):
 			rd = frame_length / 2.
 			upper_body_length = 0.4
 
-			goal = np.zeros((9, 1)) # yaw, roll, pitch, turntable, dyaw, droll, dpitch, dwheel, dturntable
+			goal = np.zeros((9, 1)) # ph, th, om, turntable, dph, dth, dom, dwheel, dturntable
 			goal[7,0] = 20
 
 			sys = {'mw': mw, 'mf': mf, 'md': md, 'rw': rw, 'rf': rf, 'rd': rd, \
@@ -155,7 +155,127 @@ class Unicycle(gym.Env):
 
 		return q
 
+	def _nle(self, x, u):
+
+		md = self.md
+		mf = self.mf
+		mw = self.mw
+		rd = self.rd
+		rf = self.rf
+		rw = self.rw
+		Idxx = self.Id[0,0]
+		Idyy = self.Id[1,1]
+		Idzz = self.Id[2,2]
+		Ifxx = self.If[0,0]
+		Ifyy = self.If[1,1]
+		Ifzz = self.If[2,2]
+		Iwxx = self.Iw[0,0]
+		Iwyy = self.Iw[1,1]
+		Iwzz = self.Iw[2,2]
+
+		g = self.g
+		al = self.alpha
+		fcoeff = self.fcoeff
+
+		ph = x[3,0]
+		th = x[4,0]
+		om = x[5,0]
+		ps = x[6,0] + om
+		ne = x[7,0]
+
+		v_ph = x[11,0]
+		v_th = x[12,0]
+		v_om = x[13,0]
+		v_ps = x[14,0] + v_om
+		v_ne = x[15,0]
+
+		Tomega = -u[0,0]
+		Tneta = u[1,0]
+
+		nle = np.array([[((2*(Idyy - Idzz)*np.cos(th)*np.sin(2*ne)*np.sin(al + om) + np.sin(th)*(2*(Iwxx - Iwzz)*np.sin(2*ps) + 2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.sin(2*om) + (2*Idxx - Idyy - Idzz + (Idyy - Idzz)*np.cos(2*ne))*np.sin(2*(al + om))))*v_th**2 + 4*v_ph*(fcoeff + (-(md*rd) + mw*rf)*rw*np.sin(th)*np.sin(om)*v_ph + (Iwxx - Iwzz)*np.cos(th)**2*np.sin(2*ps)*v_ps) + 2*(4*(-(md*rd) + mw*rf)*rw*np.sin(th)**2*np.sin(om) + (-Idyy + Idzz)*np.sin(2*ne)*np.sin(2*th)*np.sin(al + om) + np.cos(th)**2*(2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.sin(2*om) + (2*Idxx - Idyy - Idzz + (Idyy - Idzz)*np.cos(2*ne))*np.sin(2*(al + om))))*v_ph*v_om + 4*((-(md*rd) + mw*rf)*rw*np.sin(th)*np.sin(om) + (-Idyy + Idzz)*np.cos(ne)*np.cos(th)*np.sin(ne)*np.sin(al + om))*v_om**2 + v_th*((4*(Idyy - Idzz)*np.cos(2*th)*np.cos(al + om)*np.sin(2*ne) + (-2*Idxx + Idyy + Idzz - 2*(Ifxx - 2*Ifyy + Ifzz + Iwxx - 2*Iwyy + Iwzz - md*rd*(rd + rf)) + 2*(Iwxx - Iwzz)*np.cos(2*ps) + 4*(md*rd - mw*rf)*rw*np.cos(om) + 2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.cos(2*om) + (2*Idxx - Idyy - Idzz)*np.cos(2*(al + om)) + (Idyy - Idzz)*np.cos(2*ne)*(3 + np.cos(2*(al + om))))*np.sin(2*th))*v_ph + 2*np.cos(th)*(2*(Iwyy + (-Iwxx + Iwzz)*np.cos(2*ps))*v_ps + (Idyy + Idzz + 2*(Ifyy + md*rd*(rd + rf)) - 2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.cos(2*om) + (-2*Idxx + Idyy + Idzz)*np.cos(2*(al + om)) + 2*(Idyy - Idzz)*np.cos(2*ne)*np.sin(al + om)**2)*v_om)) + (v_ne*(8*Idxx*(np.sin(th)*np.sin(al + om)*v_th - np.cos(th)*np.cos(al + om)*v_om) + (Idyy - Idzz)*np.sin(2*ne)*(4*np.cos(th)*np.sin(2*(al + om))*v_th + 2*(np.cos(2*th)*(3 + np.cos(2*(al + om))) - 2*np.sin(al + om)**2)*v_ph - 8*np.sin(th)*v_om) + 4*(Idyy - Idzz)*np.cos(2*ne)*(2*np.sin(th)*np.sin(al + om)*v_th + 2*np.cos(th)*np.cos(al + om)*(2*np.sin(th)*v_ph + v_om))))/2)/4],
+						[(-8*g*((md + mf + mw)*rw + (mf*rf + md*(rd + rf))*np.cos(om))*np.sin(th) + (4*(-Idyy + Idzz)*np.cos(2*th)*np.cos(al + om)*np.sin(2*ne) + (2*Idxx + Idyy - 2*Idzz + 2*Ifxx - 4*Ifyy + 2*Ifzz + 2*Iwxx - 4*Iwyy + 2*Iwzz - 2*md*rd*(rd + rf) - (Idyy - 2*Idzz)*np.cos(2*ne) + 2*(-Iwxx + Iwzz)*np.cos(2*ps) + 4*(-(md*rd) + mw*rf)*rw*np.cos(om) - 2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.cos(2*om) - 4*np.cos(ne)**2*(Idyy - Idzz*np.cos(al + om)**2) - 2*Idxx*np.cos(2*(al + om)) + 2*Idyy*np.cos(2*(al + om))*np.sin(ne)**2)*np.sin(2*th))*v_ph**2 + 4*(Idyy - Idzz)*np.cos(al + om)*np.sin(2*ne)*v_om**2 - 4*v_ph*(2*np.cos(th)*(Iwyy + (Iwxx - Iwzz)*np.cos(2*ps))*v_ps + (np.cos(th)*(Idyy + Idzz + 2*(Ifyy + md*rd*(rd + rf)) + 4*(md*rd - mw*rf)*rw*np.cos(om) + 2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.cos(2*om) + 2*(Idyy - Idzz)*np.cos(2*ne)*np.cos(al + om)**2 + (2*Idxx - Idyy - Idzz)*np.cos(2*(al + om))) + 2*(-Idyy + Idzz)*np.cos(al + om)*np.sin(2*ne)*np.sin(th))*v_om) + 4*v_ne*(2*(Idyy - Idzz)*np.sin(2*ne)*np.sin(al + om)**2*v_th + (-2*(Idxx + (-Idyy + Idzz)*np.cos(2*ne))*np.sin(th)*np.sin(al + om) + (Idyy - Idzz)*np.cos(th)*np.sin(2*ne)*np.sin(2*(al + om)))*v_ph - 2*(Idxx + (-Idyy + Idzz)*np.cos(2*ne))*np.sin(al + om)*v_om) - 2*v_th*(4*(Iwxx - Iwzz)*np.sin(2*ps)*v_ps + 2*(4*(md*rd - mw*rf)*rw*np.sin(om) + 2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.sin(2*om) + (2*Idxx - Idyy - Idzz + (Idyy - Idzz)*np.cos(2*ne))*np.sin(2*(al + om)))*v_om))/8],
+						[(-4*Tomega - 4*g*(mf*rf + md*(rd + rf))*np.cos(th)*np.sin(om) + (2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.sin(2*om) + (2*Idxx - Idyy - Idzz + (Idyy - Idzz)*np.cos(2*ne))*np.sin(2*(al + om)))*v_th**2 + 2*(np.cos(th)*(Idyy + Idzz + 2*(Ifyy + md*rd*(rd + rf)) + 2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.cos(2*om) + 2*(Idyy - Idzz)*np.cos(2*ne)*np.cos(al + om)**2 + (2*Idxx - Idyy - Idzz)*np.cos(2*(al + om))) + 2*(-Idyy + Idzz)*np.cos(al + om)*np.sin(2*ne)*np.sin(th))*v_th*v_ph + ((Idyy - Idzz)*np.sin(2*ne)*np.sin(2*th)*np.sin(al + om) + np.cos(th)**2*(-2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.sin(2*om) + (-2*Idxx + Idyy + Idzz + (-Idyy + Idzz)*np.cos(2*ne))*np.sin(2*(al + om))))*v_ph**2 + 4*v_ne*((Idxx + (Idyy - Idzz)*np.cos(2*ne))*np.sin(al + om)*v_th + ((Idxx + (Idyy - Idzz)*np.cos(2*ne))*np.cos(th)*np.cos(al + om) + (-Idyy + Idzz)*np.sin(2*ne)*np.sin(th))*v_ph + (-Idyy + Idzz)*np.sin(2*ne)*v_om))/4],
+						[Tomega + (Iwxx - Iwzz)*np.cos(ps)*np.sin(ps)*v_th**2 + np.cos(th)*(Iwyy + (Iwxx - Iwzz)*np.cos(2*ps) + 2*(md*rd - mw*rf)*rw*np.cos(om))*v_th*v_ph + (-Iwxx + Iwzz)*np.cos(th)**2*np.cos(ps)*np.sin(ps)*v_ph**2 - (md*rd - mw*rf)*rw*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2)],
+						[(-2*Tneta + (-Idyy + Idzz)*np.sin(2*ne)*np.sin(al + om)**2*v_th**2 - 2*(Idyy - Idzz)*(np.cos(th)*np.cos(al + om)*np.sin(ne) + np.cos(ne)*np.sin(th))*(np.cos(ne)*np.cos(th)*np.cos(al + om) - np.sin(ne)*np.sin(th))*v_ph**2 + 2*(-((Idxx + (Idyy - Idzz)*np.cos(2*ne))*np.cos(th)*np.cos(al + om)) + (Idyy - Idzz)*np.sin(2*ne)*np.sin(th))*v_ph*v_om + (Idyy - Idzz)*np.sin(2*ne)*v_om**2 + v_th*((2*(Idxx + (-Idyy + Idzz)*np.cos(2*ne))*np.sin(th)*np.sin(al + om) + (-Idyy + Idzz)*np.cos(th)*np.sin(2*ne)*np.sin(2*(al + om)))*v_ph - 2*(Idxx + (Idyy - Idzz)*np.cos(2*ne))*np.sin(al + om)*v_om))/2],
+						[(rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)*v_th**2 + rw*np.sin(ph)*v_ph*(np.sin(th)*v_ph + v_ps) + 2*np.cos(th)*v_th*(-(np.cos(ph)*(rw + rf*np.cos(om))*v_ph) + rf*np.sin(ph)*np.sin(om)*v_om) + rf*np.cos(ph)*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2) + rf*np.cos(om)*np.sin(ph)*(2*v_ph*v_om + np.sin(th)*(v_ph**2 + v_om**2))],
+						[-(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)*v_th**2) - rw*np.cos(ph)*v_ph*(np.sin(th)*v_ph + v_ps) - 2*np.cos(th)*v_th*((rw + rf*np.cos(om))*np.sin(ph)*v_ph + rf*np.cos(ph)*np.sin(om)*v_om) + rf*np.sin(ph)*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2) - rf*np.cos(ph)*np.cos(om)*(2*v_ph*v_om + np.sin(th)*(v_ph**2 + v_om**2))],
+						[np.cos(th)*(rw + rf*np.cos(om))*v_th**2 - 2*rf*np.sin(th)*np.sin(om)*v_th*v_om + rf*np.cos(th)*np.cos(om)*v_om**2]])
+		return nle
+
+	def _M(self, x, u):
+
+		md = self.md
+		mf = self.mf
+		mw = self.mw
+		rd = self.rd
+		rf = self.rf
+		rw = self.rw
+		Idxx = self.Id[0,0]
+		Idyy = self.Id[1,1]
+		Idzz = self.Id[2,2]
+		Ifxx = self.If[0,0]
+		Ifyy = self.If[1,1]
+		Ifzz = self.If[2,2]
+		Iwxx = self.Iw[0,0]
+		Iwyy = self.Iw[1,1]
+		Iwzz = self.Iw[2,2]
+
+		al = self.alpha
+
+		ph = x[3,0]
+		th = x[4,0]
+		om = x[5,0]
+		ps = x[6,0] + om
+		ne = x[7,0]
+
+		M = np.array([[np.cos(ph)*((md + mf + mw)*rw + (md*rd + (md + mf)*rf)*np.cos(om))*np.sin(th) - (mf*rf + md*(rd + rf))*np.sin(ph)*np.sin(om), ((md + mf + mw)*rw + (md*rd + (md + mf)*rf)*np.cos(om))*np.sin(th)*np.sin(ph) + (mf*rf + md*(rd + rf))*np.cos(ph)*np.sin(om), 0, ((Idyy + Idzz + 2*Ifyy + 2*Iwyy + md*rd*(rd + rf) + (Idyy - Idzz)*np.cos(2*ne) + 2*(md*rd - mw*rf)*rw*np.cos(om) + md*rd*(rd + rf)*np.cos(2*om))*np.sin(th)**2 + (Idyy - Idzz)*np.cos(al + om)*np.sin(2*ne)*np.sin(2*th))/2 + md*rd*(rd + rf)*np.sin(om)**2 + np.cos(th)**2*(Iwzz*np.cos(ps)**2 + Ifzz*np.cos(om)**2 + np.cos(al + om)**2*(Idzz*np.cos(ne)**2 + Idyy*np.sin(ne)**2) + Iwxx*np.sin(ps)**2 + Ifxx*np.sin(om)**2 + Idxx*np.sin(al + om)**2), ((Idyy - Idzz)*np.sin(2*ne)*np.sin(th)*np.sin(al + om) + np.cos(th)*((-Iwxx + Iwzz)*np.sin(2*ps) - (Ifxx - Ifzz + md*rd*(rd + rf))*np.sin(2*om) + (-Idxx + Idzz*np.cos(ne)**2 + Idyy*np.sin(ne)**2)*np.sin(2*(al + om))))/2, ((Idyy - Idzz)*np.cos(th)*np.cos(al + om)*np.sin(2*ne) + (Idyy + Idzz + 2*(Ifyy + md*rd*(rd + rf)) + (Idyy - Idzz)*np.cos(2*ne) + 2*(md*rd - mw*rf)*rw*np.cos(om))*np.sin(th))/2, Iwyy*np.sin(th), -(Idxx*np.cos(th)*np.sin(al + om))],
+					  [np.cos(th)*((md + mf + mw)*rw + (mf*rf + md*(rd + rf))*np.cos(om))*np.sin(ph), -(np.cos(th)*np.cos(ph)*((md + mf + mw)*rw + (mf*rf + md*(rd + rf))*np.cos(om))), -(((md + mf + mw)*rw + (mf*rf + md*(rd + rf))*np.cos(om))*np.sin(th)), (Idyy - Idzz)*np.cos(ne)*np.sin(ne)*np.sin(th)*np.sin(al + om) + (np.cos(th)*(2*(-Iwxx + Iwzz)*np.sin(2*ps) + 4*(-(md*rd) + mw*rf)*rw*np.sin(om) - 2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.sin(2*om) + (-2*Idxx + Idyy + Idzz + (-Idyy + Idzz)*np.cos(2*ne))*np.sin(2*(al + om))))/4, (2*Idxx + Idyy + Idzz + 2*(Ifxx + Ifzz + Iwxx + Iwzz + md*rd*(rd + rf)) + 2*(Iwxx - Iwzz)*np.cos(2*ps) + 4*(md*rd - mw*rf)*rw*np.cos(om) + 2*(Ifxx - Ifzz + md*rd*(rd + rf))*np.cos(2*om) + (2*Idxx - Idyy - Idzz)*np.cos(2*(al + om)) + 2*(-Idyy + Idzz)*np.cos(2*ne)*np.sin(al + om)**2)/4, ((Idyy - Idzz)*np.sin(2*ne)*np.sin(al + om))/2, 0, Idxx*np.cos(al + om)],
+					  [(mf*rf + md*(rd + rf))*(np.cos(ph)*np.cos(om) - np.sin(th)*np.sin(ph)*np.sin(om)), (mf*rf + md*(rd + rf))*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om)), -((mf*rf + md*(rd + rf))*np.cos(th)*np.sin(om)), ((Idyy - Idzz)*np.cos(th)*np.cos(al + om)*np.sin(2*ne) + (Idyy + Idzz + 2*(Ifyy + md*rd*(rd + rf)) + (Idyy - Idzz)*np.cos(2*ne))*np.sin(th))/2, ((Idyy - Idzz)*np.sin(2*ne)*np.sin(al + om))/2, (Idyy + Idzz + 2*(Ifyy + md*rd*(rd + rf)) + (Idyy - Idzz)*np.cos(2*ne))/2, 0, 0],
+					  [(md + mf + mw)*rw*np.cos(ph), (md + mf + mw)*rw*np.sin(ph), 0, (Iwyy + (md*rd - mw*rf)*rw*np.cos(om))*np.sin(th), 0, (md*rd - mw*rf)*rw*np.cos(om), Iwyy, 0],
+					  [0, 0, 0, -(Idxx*np.cos(th)*np.sin(al + om)), Idxx*np.cos(al + om), 0, 0, Idxx],
+					  [1, 0, 0, -(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)) + rf*np.sin(ph)*np.sin(om), -(np.cos(th)*(rw + rf*np.cos(om))*np.sin(ph)), rf*(-(np.cos(ph)*np.cos(om)) + np.sin(th)*np.sin(ph)*np.sin(om)), -(rw*np.cos(ph)), 0],
+					  [0, 1, 0, -((rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)) - rf*np.cos(ph)*np.sin(om), np.cos(th)*np.cos(ph)*(rw + rf*np.cos(om)), -(rf*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om))), -(rw*np.sin(ph)), 0],
+					  [0, 0, 1, 0, (rw + rf*np.cos(om))*np.sin(th), rf*np.cos(th)*np.sin(om), 0, 0]])
+		return M
+
 	def dyn(self, x, u):
+
+		x_ = np.zeros((16,1))
+		x_[3:6,0] = x[0:3,0] # ph, th, om
+		x_[7,0] = x[3,0] # ne
+		x_[11,0] = x[4,0]
+		x_[12,0] = x[5,0]
+		x_[13,0] = x[6,0]
+		x_[14,0] = x[7,0]
+		x_[15,0] = x[8,0]
+
+		M = self._M(x_, u)
+		nle = self._nle(x_, u)
+		acc = - np.linalg.inv(M) @ nle
+		acc[6,0] -= acc[5,0]
+
+		dx = np.zeros((self.X_DIMS, 1))
+		
+		dx[0:3,0] = x[4:7,0]
+		dx[3,0] = x[8,0]
+		dx[4:9,0] = acc[3:8,0]
+
+		return dx
+
+	def dyn_full(self, x, u):
+
+		M = self._M(x, u)
+		nle = self._nle(x, u)
+		acc = - np.linlag.solve(M, nle)
+		acc[6,0] -= acc[5,0]
+
+		dx = np.zeros((16, 1))
+		dx[:8,0] = x[8:16,0]
+		dx[8:16,0] = acc[:,0]
+
+		return dx
+
+	def dyn_ana(self, x, u):
 
 		md = self.md
 		mf = self.mf
@@ -1712,7 +1832,7 @@ class Unicycle(gym.Env):
 
 		return dx
 
-	def dyn_full(self, x, u):
+	def dyn_full_ana(self, x, u):
 		
 		md = self.md
 		mf = self.mf
@@ -1734,12 +1854,12 @@ class Unicycle(gym.Env):
 		al = self.alpha
 		fcoeff = self.fcoeff
 
-		# x = [x, y, z, yaw, roll, pitch, turntable, vx, vy, vz, dyaw, droll, dpitch, dwheel, dturntable]
+		# x = [x, y, z, ph, th, om, turntable, vx, vy, vz, dph, dth, dom, dwheel, dturntable]
 		
 		ph = x[3,0]
 		th = x[4,0]
 		om = x[5,0]
-		ps = x[6,0]
+		ps = x[6,0] + om
 		ne = x[7,0]
 
 		vx = x[8,0]
@@ -3700,7 +3820,7 @@ class Unicycle(gym.Env):
 		et45 = t768*t2502*(Idxx*t72*(t2379+Iwyy*(-t1215+t1575+(t409*(t995+t1127))/2.0+t1709*(t122-t208)+rf*t293*(-t1160+t1551+t178*t293*(t995+t1127)))+t71*(-t859+t1255+t254*(t677+t936)+t1461*(t122-t208)+rf*t293*(-t877+t1274+t4*t116*(t677+t936)))-rf*t6*t8*t2362)-Idxx*t6*t73*t2459)+t471*t2502*(Idxx*t72*(t2424+t11*t349*(t1499-t1893-t2028+t2144-t2276+rw*t4*(t1145+t254*(t1134+(t544*(t285-t414))/2.0)+t4*t116*(t851-t1154))))+Idxx*t6*t73*t2462)
 		et46 = t1754*t2506*(Idxx*t72*(t2417+rf*t55*t63*t178*(t400+t1004+t1151+t619*(t122-t208)+rw*t9*(-t597+t1039+t800*(t122-t208))+rw*t4*(t1038+t334*(t285-t414))))-Idxx*t6*t73*t2410)
 
-		dx = np.zeros((self.X_DIMS+7))
+		dx = np.zeros((16,1))
 		dx[0,0] = vx
 		dx[1,0] = vy
 		dx[2,0] = vz

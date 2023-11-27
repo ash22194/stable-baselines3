@@ -2,7 +2,7 @@ environment:
   num_envs:
     type: 'int'
     low: 1
-    high: 10
+    high: 5
 
 algorithm:
   gae_lambda: 
@@ -12,7 +12,7 @@ algorithm:
 
   n_steps:
     type: 'categorical'
-    choices: [16, 32, 64, 128, 256]
+    choices: [128, 256]
   
   learning_rate:
     type: 'float'
@@ -22,9 +22,8 @@ algorithm:
   learning_rate_schedule:
     type: 'categorical'
     choices:
+      - type: null
       - type: 'lin'
-      - type: 'exp'
-        decay_rate: 10
 
 policy:
   net_arch:
@@ -32,6 +31,8 @@ policy:
     choices:
       - pi: [128, 128]
         vf: [128, 128]
+      - pi: [256, 256]
+        vf: [256, 256]
   
   optimizer_class:
     type: 'categorical'
