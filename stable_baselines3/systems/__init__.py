@@ -1,5 +1,7 @@
 from gymnasium.envs.registration import register
 
+register(id='Unicycle-v0', entry_point='stable_baselines3.systems.unicycle:Unicycle')
+
 register(id='Quadcopter-v0', entry_point='stable_baselines3.systems.quadcopter:Quadcopter')
 
 register(id='CartPoleCustom-v0', entry_point='stable_baselines3.systems.cartpole:CartPole')
