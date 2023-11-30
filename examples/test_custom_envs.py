@@ -24,6 +24,7 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=F
 		while (not done):
 			action, _state = model.predict(obs, deterministic=True)
 			obs, reward, done, _, info = test_env.step(action)
+			test_env.render()
 
 			ep_reward[ee] += reward
 			ep_discounted_reward[ee] += (discount*reward)
@@ -64,7 +65,7 @@ def main():
 		elif (ff_ext == '.yaml'):
 			cfg = YAML().load(open(ff, 'r'))
 	
-	test_env = gym.make(cfg['environment']['name'])
+	test_env = gym.make(cfg['environment']['name'], **cfg['environment']['environment_kwargs'])
 	check_env(test_env)
 
 	if (cfg['algorithm']['name'] == 'PPO'):
