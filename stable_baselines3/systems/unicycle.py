@@ -28,7 +28,7 @@ class Unicycle(gym.Env):
 				'Iw': np.diag([mw*(rw**2 + 0.04**2)/5, 2*mw*(rw**2)/5, mw*(rw**2 + 0.04**2)/5]),\
 				'If': np.diag([mf*(frame_length**2 + 0.08**2)/12, mf*(frame_length**2 + 0.08**2)/12, 2*mf*(0.08**2)/12]),\
 				'Id': np.diag([md*(upper_body_length**2 + 0.08**2)/12, md*(upper_body_length**2 + 0.08**2)/12, 2*md*(0.08**2)/12]),\
-				'alpha': -np.pi/2, 'g': 9.81, 'fcoeff': 0.01, 'T': 10, 'dt':1e-3, 'gamma_':0.9995, 'X_DIMS': 9, 'U_DIMS': 2,\
+				'alpha': -np.pi/2, 'g': 9.81, 'fcoeff': 0.01, 'T': 6, 'dt':1e-3, 'gamma_':0.9995, 'X_DIMS': 9, 'U_DIMS': 2,\
 				'goal': goal, 'u0': np.zeros((2,1)), 'Q': np.diag([0., 2.5, 2.5, 1., 0.25, 0.001, 0.001, 0.05, 0.25]), 'R': (np.eye(2) / 100.),\
 				'x_limits': np.array([[-np.pi, np.pi], [-np.pi/2, np.pi/2], [-np.pi/2, np.pi/2], [-np.pi, np.pi], [-14, 14], [-8, 8], [-8, 8], [5, 35], [-14, 14]]), 'u_limits': np.array([[-24., 24.], [-80., 80.]])}
 			sys['lambda_'] = (1. - sys['gamma_']) / sys['dt']

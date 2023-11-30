@@ -8,6 +8,7 @@ environment:
 
 algorithm:
   name: 'PPO'
+  save_every_timestep: 2500000
   total_timesteps: 10000000
   algorithm_kwargs:
     gamma: 0.9995

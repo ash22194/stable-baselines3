@@ -12,15 +12,16 @@ import numpy as np
 from typing import Callable, Dict
 
 from stable_baselines3 import A2CwReg, PPO
-from stable_baselines3.common.callbacks import SaveEveryCallback
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.learning_schedules import linear_schedule, decay_sawtooth_schedule, exponential_schedule
 from stable_baselines3.common.logger import configure
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
 
 import optuna
 from optuna.samplers import TPESampler
+from optuna.pruners import MedianPruner
 from optuna.integration.wandb import WeightsAndBiasesCallback
 import wandb
 
@@ -77,7 +78,21 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 		YAML(typ='rt', pure=True).dump(cfg, f)
 
 	# initialize a model
-	model, callback = initialize_model(cfg, trial_save_dir)
+	model = initialize_model(cfg, trial_save_dir)
+
+	# define pruning callback
+	eval_env = gym.make(cfg['environment']['name'], **cfg['environment'].get('environment_kwargs', dict()))
+	eval_every_timestep = cfg['algorithm'].get('save_every_timestep', None)
+	if (eval_every_timestep is None):
+		eval_every_timestep = cfg['algorithm']['total_timesteps']
+	callback = PruneTrialCallback(
+		trial=trial, 
+		eval_every_timestep=eval_every_timestep, 
+		eval_env=eval_env,
+		num_eval_episodes=5,
+		save_path=trial_save_dir,
+		save_prefix=cfg['policy'].get('save_prefix', 'model')
+	)
 
 	# train the model
 	total_timesteps = cfg['algorithm']['total_timesteps']
@@ -158,12 +173,7 @@ def initialize_model(cfg: Dict, save_dir: str):
 	logger = configure(folder=save_dir, format_strings=["tensorboard"])
 	model.set_logger(logger)
 
-	save_every_timestep = algorithm_args.get('save_every_timestep', None)
-	if (save_every_timestep is None):
-		save_every_timestep = algorithm_args.get('total_timesteps')
-	callback = SaveEveryCallback(save_every_timestep=save_every_timestep, save_path=logger.get_dir(), save_prefix=policy_args.get('save_prefix'))
-
-	return model, callback
+	return model
 
 def evaluate_model(model, test_env: gym.Env, num_episodes: int):
 	ep_reward = np.zeros(num_episodes)
@@ -185,6 +195,52 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int):
 		final_err[ee] = np.linalg.norm(obs.reshape(-1) - test_env.goal.reshape(-1))
 
 	return ep_reward, ep_discounted_reward, final_err
+
+class PruneTrialCallback(BaseCallback):
+	"""
+	A callback to periodically evaluate the model that derives from ``BaseCallback``.
+
+	:param verbose: (int) Verbosity level 0: not output 1: info 2: debug
+	"""
+	def __init__(self, trial, eval_every_timestep, eval_env, num_eval_episodes, save_path, save_prefix='model', verbose=0):
+		super(PruneTrialCallback, self).__init__(verbose)
+
+		self.trial = trial
+		self.eval_every_timestep = eval_every_timestep
+		self.eval_env = eval_env
+		self.num_eval_episodes = num_eval_episodes
+		self.save_prefix = save_prefix
+		self.save_path = save_path
+
+		self.curr_check_point_id = 0
+
+	def _on_training_start(self) -> None:
+		pass
+
+	def _on_rollout_start(self) -> None:
+		pass
+
+	def _on_step(self) -> bool:
+		check_point_id = divmod(self.model.num_timesteps+1, self.eval_every_timestep)[0]
+		if (check_point_id > self.curr_check_point_id):
+			ep_reward, ep_discounted_reward, final_err = evaluate_model(self.model, self.eval_env, self.num_eval_episodes)
+			self.curr_check_point_id = check_point_id
+
+			self.trial.report(np.mean(ep_discounted_reward), self.model.num_timesteps+1)
+			if (self.trial.should_prune()):
+				raise optuna.TrialPruned()
+			else:
+				# if not pruned, save the checkpoint
+				save_id = check_point_id*self.eval_every_timestep
+				self.model.save(os.path.join(self.save_path, self.save_prefix + '_' + str(save_id)))
+			
+		return True
+
+	def _on_rollout_end(self) -> None:
+		pass
+
+	def _on_training_end(self) -> None:
+		pass
 
 def main():
 
@@ -255,6 +311,7 @@ def main():
 		study_name=study_name,
 		direction="maximize",
 		sampler=TPESampler(),
+		pruner=MedianPruner(n_startup_trials=num_trials, n_warmup_steps=1),
 		storage="sqlite:///" + os.path.join(sweep_dir, 'sweep.db'),
 		load_if_exists=True
 	)

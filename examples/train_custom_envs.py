@@ -57,7 +57,7 @@ def initialize_model(config_file_path: str, save_dir: str, run: int = None):
 	# initialize the environment
 	environment_args = cfg['environment']
 	num_envs = environment_args.get('num_envs')
-	env = make_vec_env(environment_args.get('name'), num_envs, env_kwargs=environment_args.get('environment_kwargs', dict()))
+	env = make_vec_env(environment_args.get('name'), n_envs=num_envs, env_kwargs=environment_args.get('environment_kwargs', dict()))
 
 	# initialize the agent
 	algorithm_args = cfg['algorithm']
