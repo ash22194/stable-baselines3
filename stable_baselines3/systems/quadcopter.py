@@ -16,7 +16,7 @@ class Quadcopter(gym.Env):
 		g = 9.81
 		sys_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
 				'Q': np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': np.diag([0.002, 0.01, 0.01, 0.004]),\
-				'goal': np.array([[1], [0], [0], [0], [0], [0], [0], [0], [0], [0]]), 'u0': np.array([[m*g], [0], [0], [0]]),\
+				'goal': np.array([[1.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.]]), 'u0': np.array([[m*g], [0.], [0.], [0.]]),\
 				'T': 4, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,\
 				'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-5., 5.], [-5., 5.], [-5., 5.], [-3., 3.], [-3., 3.], [-3., 3.]]),\
 				'x_bounds': np.array([[-10., 10.], [-10., 10.], [0., 2.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-10., 10.], [-10., 10.], [-10., 10.], [-7., 7.], [-7., 7.], [-7., 7.]]),\
@@ -26,6 +26,7 @@ class Quadcopter(gym.Env):
 		sys.update(sys_)
 
 		self.X_DIMS = sys['X_DIMS'] # dimension of observations
+		self.independent_sampling_dims = np.arange(self.X_DIMS)
 		self.observation_dims = np.arange(10) + 2 # drop the xy co-ordinate in the observation
 		self.U_DIMS = sys['U_DIMS']
 		self.goal = sys['goal']
@@ -94,7 +95,7 @@ class Quadcopter(gym.Env):
 			if (self.fixed_start):
 				self.state = np.array([0., 0., 0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
 			else:
-				self.state = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.X_DIMS) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+				self.state = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
 		else:
 			assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
 			self.state = state
