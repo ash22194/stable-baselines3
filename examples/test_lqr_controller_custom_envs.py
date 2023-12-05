@@ -50,11 +50,11 @@ def main():
 	args = parser.parse_args()
 
 	if (args.env_name == 'quadcopter'):
-		env = gym.make('Quadcopter-v0', expand_limits=True)
-		
+		env = gym.make('Quadcopter-v0', normalized_observations=False)
+
 	elif (args.env_name == 'unicycle'):
-		env = gym.make('Unicycle-v0', expand_limits=False)
-	
+		env = gym.make('Unicycle-v0', fixed_start=False, normalized_observations=False)
+
 	# compute linearizations
 	A, B, Ad, Bd = compute_dynamics_linearizations(env)
 
@@ -62,7 +62,7 @@ def main():
 	if (args.controller_type == 'ct'):
 		# continuous time
 		lambda_ = env.lambda_
-		P = solve_continuous_are(A - lambda_/2*np.eye(env.X_DIMS), B, env.Q, env.R)
+		P = solve_continuous_are(A - lambda_/2*np.eye(A.shape[0]), B, env.Q, env.R)
 		K = np.linalg.inv(env.R) @ (B.T @ P)
 	elif (args.controller_type == 'dt'):
 		# discrete time
@@ -83,6 +83,8 @@ def main():
 		start = obs
 		done = False
 		value = 0
+		min_obs = np.inf*np.ones(obs.shape)
+		max_obs = -np.inf*np.ones(obs.shape)
 		while (not done):
 			action = (u0 - K @ (obs - goal))
 			action = np.maximum(u_limits[:,0], np.minimum(u_limits[:,1], action))
@@ -90,10 +92,15 @@ def main():
 				action = (2*action - (u_limits[:,1] + u_limits[:,0])) / (u_limits[:,1] - u_limits[:,0])
 			
 			obs, reward, done, _, info = env.step(action)
+			min_obs[obs < min_obs] = obs[obs < min_obs]
+			max_obs[obs > max_obs] = obs[obs > max_obs]
 			value += reward
 
 		with np.printoptions(precision=3, suppress=True):
 			print('Start state :', start, ', Final state :', obs, ', Value :', value, ', Step count :', info.get('step_count'))
+			print('Min obs :', min_obs)
+			print('Max obs :', max_obs)
+			print()
 
 if __name__=='__main__':
 	main()

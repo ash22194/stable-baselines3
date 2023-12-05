@@ -9,33 +9,37 @@ class Unicycle(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, sys=None, fixed_start=False, normalized_actions=True, expand_limits=False):
+	def __init__(self, sys=dict(), fixed_start=False, normalized_actions=True, normalized_observations=False):
 		# super(Unicycle, self).__init__()
 		# Define model paramters
-		if (sys is None):
-			mw = 0.5
-			mf = 0.65 + mw
-			md = 2.64 * 2.
+		mw = 0.5
+		mf = 0.65 + mw
+		md = 2.64 * 2.
 
-			rw = 0.1524
-			frame_length = 0.39
-			rf = frame_length / 2.
-			rd = frame_length / 2.
-			upper_body_length = 0.4
+		rw = 0.1524
+		frame_length = 0.39
+		rf = frame_length / 2.
+		rd = frame_length / 2.
+		upper_body_length = 0.4
 
-			goal = np.zeros((9, 1)) # ph, th, om, turntable, dph, dth, dom, dwheel, dturntable
-			goal[7,0] = 20
+		goal = np.zeros((9, 1)) # ph, th, om, turntable, dph, dth, dom, dwheel, dturntable
+		goal[7,0] = 20
 
-			sys = {'mw': mw, 'mf': mf, 'md': md, 'rw': rw, 'rf': rf, 'rd': rd, \
-				'Iw': np.diag([mw*(rw**2 + 0.04**2)/5, 2*mw*(rw**2)/5, mw*(rw**2 + 0.04**2)/5]),\
-				'If': np.diag([mf*(frame_length**2 + 0.08**2)/12, mf*(frame_length**2 + 0.08**2)/12, 2*mf*(0.08**2)/12]),\
-				'Id': np.diag([md*(upper_body_length**2 + 0.08**2)/12, md*(upper_body_length**2 + 0.08**2)/12, 2*md*(0.08**2)/12]),\
-				'alpha': -np.pi/2, 'g': 9.81, 'fcoeff': 0.01, 'T': 6, 'dt':1e-3, 'gamma_':0.9995, 'X_DIMS': 9, 'U_DIMS': 2,\
-				'goal': goal, 'u0': np.zeros((2,1)), 'Q': np.diag([0., 2.5, 2.5, 1., 0.25, 0.001, 0.001, 0.05, 0.25]), 'R': (np.eye(2) / 100.),\
-				'x_limits': np.array([[-np.pi, np.pi], [-np.pi/2, np.pi/2], [-np.pi/2, np.pi/2], [-np.pi, np.pi], [-14, 14], [-8, 8], [-8, 8], [5, 35], [-14, 14]]), 'u_limits': np.array([[-24., 24.], [-80., 80.]])}
-			sys['lambda_'] = (1. - sys['gamma_']) / sys['dt']
+		sys_ = {'mw': mw, 'mf': mf, 'md': md, 'rw': rw, 'rf': rf, 'rd': rd, \
+			'Iw': np.diag([mw*(rw**2 + 0.04**2)/5, 2*mw*(rw**2)/5, mw*(rw**2 + 0.04**2)/5]),\
+			'If': np.diag([mf*(frame_length**2 + 0.08**2)/12, mf*(frame_length**2 + 0.08**2)/12, 2*mf*(0.08**2)/12]),\
+			'Id': np.diag([md*(upper_body_length**2 + 0.08**2)/12, md*(upper_body_length**2 + 0.08**2)/12, 2*md*(0.08**2)/12]),\
+			'alpha': -np.pi/2, 'g': 9.81, 'fcoeff': 0.01, 'T': 6, 'dt':1e-3, 'gamma_':0.999, 'X_DIMS': 16, 'U_DIMS': 2,\
+			'goal': goal, 'u0': np.zeros((2,1)), 'Q': np.diag([0., 2.5, 2.5, 1., 0.25, 0.001, 0.001, 0.05, 0.25]), 'R': (np.eye(2) / 100.),\
+			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-2., 2.], [-1., 1.], [-1., 1.], [15., 25.], [-2., 2.]]),\
+			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/2, np.pi/2], [-np.pi/2, np.pi/2], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-16., 16.], [-8., 8.], [-8., 8.], [5., 35.], [-16., 16.]]),\
+			'u_limits': np.array([[-24., 24.], [-20., 20.]])}
+		sys_.update(sys)
+		sys_['lambda_'] = (1. - sys_['gamma_']) / sys_['dt']
+		sys.update(sys_)
 
 		self.X_DIMS = sys['X_DIMS'] # dimension of observations
+		self.independent_sampling_dims = np.array([3,4,5,6,7,11,12,13,14,15]) # the same length as x_sample_limits
 		self.observation_dims = np.array([3,4,5,7,11,12,13,14,15])
 		self.U_DIMS = sys['U_DIMS']
 		self.goal = sys['goal']
@@ -43,7 +47,8 @@ class Unicycle(gym.Env):
 		self.T = sys['T']
 		self.dt = sys['dt']
 		self.horizon = round(self.T / self.dt)
-		self.x_limits = sys['x_limits'] # reset within these limits
+		self.x_sample_limits = sys['x_sample_limits'] # reset within these limits
+		self.x_bounds = sys['x_bounds']
 		self.u_limits = sys['u_limits']
 		self.Q = sys['Q']
 		self.R = sys['R']
@@ -66,7 +71,7 @@ class Unicycle(gym.Env):
 
 		self.fixed_start = fixed_start
 		self.normalized_actions = normalized_actions
-		self.expand_limits = expand_limits
+		self.normalized_observations = normalized_observations
 		# self.reset()
 
 		# Define action and observation space
@@ -77,64 +82,94 @@ class Unicycle(gym.Env):
 		else:
 			self.action_space = spaces.Box(low=self.u_limits[:,0], high=self.u_limits[:,1], dtype=np.float32)
 
-		self.observation_space = spaces.Box(low=self.x_limits[:,0], high=self.x_limits[:,1], dtype=np.float32)
+		if (normalized_observations):
+			self.observation_space = spaces.Box(low=-1, high=1, shape=(self.observation_dims.shape[0],), dtype=np.float32)
+		else:
+			self.observation_space = spaces.Box(low=self.x_bounds[self.observation_dims,0], high=self.x_bounds[self.observation_dims,1], dtype=np.float32)
 
 	def step(self, action):
 		# If scaling actions use this
 		if (self.normalized_actions):
 			action = 0.5*((self.u_limits[:,0] + self.u_limits[:,1]) + action*(self.u_limits[:,1] - self.u_limits[:,0]))
-		a = action[:,np.newaxis]
-		x = self.state[self.observation_dims, np.newaxis]
-		cost = sum((x - self.goal) * np.matmul(self.Q, x - self.goal)) + sum((a - self.u0) * np.matmul(self.R, a - self.u0))
-		cost = cost * self.dt
-		reward = -cost[0]
+		
+		state_ = self.dyn_rk4(self.state[:,np.newaxis], action[:,np.newaxis], self.dt)
+		state_ = state_[:,0]
+		state_ = np.minimum(self.x_bounds[:,1], np.maximum(self.x_bounds[:,0], state_))
 
-		state_ = self.dyn_rk4(self.state[:,np.newaxis], a, self.dt)
-		observation = state_[self.observation_dims, 0]
+		cost, reached_goal = self._get_cost(action, state_)
+		reward = -cost
 
-		limit_violation = False
-		if (self.expand_limits):
-			observation = np.minimum(10, np.maximum(-10, observation))
-		else:
-			observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
-
-		reached_goal = np.linalg.norm(observation[1:] - self.goal[1:,0]) < 1e-2
-		self.state = state_[:,0]
-		self.state[self.observation_dims] = observation
+		self.state = state_
 		self.step_count += 1
 
-		if ((self.step_count >= self.horizon) or limit_violation or reached_goal):
+		if ((self.step_count >= self.horizon) or reached_goal):
 			done = True
 			info = {'terminal_state': deepcopy(self.state), 'step_count' : deepcopy(self.step_count)}
 		else:
 			done = False
 			info = {'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)}
 
-		return np.float32(observation), reward, done, False, info
+		return self.get_obs(), reward, done, False, info
 
 	def reset(self, seed=None, options=None, state=None):
 		super().reset(seed=seed)
 		if (state is None):
 			if (self.fixed_start):
-				observation = np.array([0., 0.2, 0.2, 0.1, 0.0, 0.0, 0.0, 5.0, 0.0], dtype=np.float32)
+				sample = np.array([0.2, 0.3, 0.1, 0., 0.1, 0., 0.1, -0.1, 5., 0.])
 			else:
-				observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) + 0.1 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
-				observation = np.float32(observation)
-
-			Rframe = transfm.Rotation.from_euler('yxz', [observation[2], observation[1], observation[0]]).as_matrix()
-			Rwheel = transfm.Rotation.from_euler('yxz', [0., observation[1], observation[0]]).as_matrix()
-			com = Rframe @ np.array([0., 0., self.rf]) + Rwheel @ np.array([0., 0., self.rw])
+				sample = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
 		else:
-			com = state[:3]
-			observation = state[self.observation_dims]
+			assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
+			# construct the dependent states from the independent
+			sample = state[self.independent_sampling_dims]
 
-		self.state = np.zeros(16)
+		self.state = np.zeros(self.X_DIMS)
+		self.state[self.independent_sampling_dims] = sample
+
+		yaw = sample[0]
+		roll = sample[1]
+		pitch = sample[2]
+		dumbell_yaw = sample[4]
+		v_yaw = sample[5]
+		v_roll = sample[6]
+		v_pitch = sample[7]
+		v_wheel = sample[8]
+		v_dumbell_yaw = sample[9]
+
+		Rframe = transfm.Rotation.from_euler('yxz', [pitch, roll, yaw]).as_matrix()
+		Rwheel = transfm.Rotation.from_euler('yxz', [0., roll, yaw]).as_matrix()
+		com = Rframe @ np.array([0., 0., self.rf]) + Rwheel @ np.array([0., 0., self.rw])
 		self.state[:3] = com
-		self.state[self.observation_dims] = observation
+
+		J = self._jacobian_contact(np.array([yaw, roll, pitch]))
+		v_com = -np.linalg.inv(J[:,:3]) @ J[:,3:] @ np.array([v_yaw, v_roll, v_pitch, v_wheel, v_dumbell_yaw])
+		self.state[8:11] = v_com
+
 		self.step_count = 0
 		info = {'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)}
 
-		return observation, info
+		return self.get_obs(), info
+
+	def get_obs(self, normalized=None):
+		obs = self.state[self.observation_dims]
+		if ((normalized == None) and self.normalized_observations) or (normalized == True):
+			obs_bounds_mid = 0.5*(self.x_bounds[self.observation_dims,1] + self.x_bounds[self.observation_dims,0])
+			obs_bounds_range = 0.5*(self.x_bounds[self.observation_dims,1] - self.x_bounds[self.observation_dims,0])
+			obs = (obs - obs_bounds_mid) / obs_bounds_range
+
+		return np.float32(obs)
+	
+	def _get_cost(self, action, state_):
+		x = self.get_obs()
+		x = x[:,np.newaxis]
+		a = action[:,np.newaxis]
+
+		cost = np.sum((x - self.goal) * (self.Q @ (x - self.goal))) + np.sum((a - self.u0) * (self.R @ (a - self.u0)))
+		cost = cost * self.dt
+
+		reached_goal = np.linalg.norm(state_[self.observation_dims[1:]] - self.goal[1:,0]) <= 1e-2	
+
+		return cost, reached_goal
 
 	def dyn_rk4(self, x, u, dt):
 		k1 = self.dyn_full(x, u)
@@ -414,8 +449,26 @@ class Unicycle(gym.Env):
 		dx[8:16,0] = acc[:,0]
 
 		return dx
+	
+	def _jacobian_contact(self, yrp):
+		
+		rw = self.rw
+		rf = self.rf
+		ph = yrp[0]
+		th = yrp[1]
+		om = yrp[2]
 
-	def dyn_full_ana(self, x, u):
+		J = np.zeros((3, 8))
+		J[:, :3] = np.eye(3)
+		J[0, 3:8] = np.array([-(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)) + rf*np.sin(ph)*np.sin(om), -(np.cos(th)*(rw + rf*np.cos(om))*np.sin(ph)), -(rf*np.cos(ph)*np.cos(om)) + rf*np.sin(th)*np.sin(ph)*np.sin(om), -(rw*np.cos(ph)), 0.])
+		J[1, 3:8] = np.array([-((rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)) - rf*np.cos(ph)*np.sin(om), np.cos(th)*np.cos(ph)*(rw + rf*np.cos(om)), -(rf*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om))), -(rw*np.sin(ph)), 0.])
+		J[2, 3:8] = np.array([0., (rw + rf*np.cos(om))*np.sin(th), rf*np.cos(th)*np.sin(om), 0., 0.])
+		
+		J[:, 6] -= J[:, 5]
+
+		return J
+
+	def _dyn_full_ana(self, x, u):
 		
 		md = self.md
 		mf = self.mf

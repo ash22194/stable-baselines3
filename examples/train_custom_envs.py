@@ -36,8 +36,7 @@ def initialize_model(config_file_path: str, save_dir: str, run: int = None):
 		if (policy_args['policy_kwargs']['activation_fn'] == 'relu'):
 			policy_args['policy_kwargs']['activation_fn'] = nn.ReLU
 		elif (policy_args['policy_kwargs']['activation_fn'] == 'elu'):
-			# TODO: Add support for ELU 
-			pass
+			policy_args['policy_kwargs']['activation_fn'] = nn.ELU
 		elif (policy_args['policy_kwargs']['activation_fn'] == 'tanh'):
 			policy_args['policy_kwargs']['activation_fn'] = nn.Tanh
 

@@ -9,29 +9,32 @@ class Quadcopter(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, sys=None, fixed_start=False, normalized_actions=True, expand_limits=False):
+	def __init__(self, sys=dict(), fixed_start=False, normalized_actions=True, normalized_observations=False):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
-		if (sys is None):
-			m = 0.5
-			g = 9.81
-			sys = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
-					'Q': np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': np.diag([0.002, 0.01, 0.01, 0.004]),\
-					'goal': np.array([[1], [0], [0], [0], [0], [0], [0], [0], [0], [0]]), 'u0': np.array([[m*g], [0], [0], [0]]),\
-					'T': 4, 'dt': 2.5e-3, 'lambda_': 1, 'X_DIMS': 10, 'U_DIMS': 4,\
-					'x_limits': np.array([[0, 2.0], [-np.pi/2, np.pi/2], [-np.pi/2, np.pi/2], [-np.pi, np.pi], [-4, 4], [-4, 4], [-4, 4], [-3, 3], [-3, 3], [-3, 3]]),\
-					'u_limits': np.array([[0, 2*m*g], [-0.25*m*g, 0.25*m*g], [-0.25*m*g, 0.25*m*g], [-0.125*m*g, 0.125*m*g]])}
-			sys['gamma_'] = np.exp(-sys['lambda_']*sys['dt'])
+		m = 0.5
+		g = 9.81
+		sys_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
+				'Q': np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': np.diag([0.002, 0.01, 0.01, 0.004]),\
+				'goal': np.array([[1], [0], [0], [0], [0], [0], [0], [0], [0], [0]]), 'u0': np.array([[m*g], [0], [0], [0]]),\
+				'T': 4, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,\
+				'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-5., 5.], [-5., 5.], [-5., 5.], [-3., 3.], [-3., 3.], [-3., 3.]]),\
+				'x_bounds': np.array([[-10., 10.], [-10., 10.], [0., 2.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-10., 10.], [-10., 10.], [-10., 10.], [-7., 7.], [-7., 7.], [-7., 7.]]),\
+				'u_limits': np.array([[0, 2*m*g], [-0.25*m*g, 0.25*m*g], [-0.25*m*g, 0.25*m*g], [-0.125*m*g, 0.125*m*g]])}
+		sys_.update(sys)
+		sys_['gamma_'] = np.exp(-sys_['lambda_']*sys_['dt'])
+		sys.update(sys_)
 
 		self.X_DIMS = sys['X_DIMS'] # dimension of observations
-		self.observation_dims = np.arange(self.X_DIMS) + 2 # drop the xy co-ordinate in the observation
+		self.observation_dims = np.arange(10) + 2 # drop the xy co-ordinate in the observation
 		self.U_DIMS = sys['U_DIMS']
 		self.goal = sys['goal']
 		self.u0 = sys['u0']
 		self.T = sys['T']
 		self.dt = sys['dt']
 		self.horizon = round(self.T / self.dt)
-		self.x_limits = sys['x_limits'] # reset within these limits
+		self.x_sample_limits = sys['x_sample_limits'] # reset within these limits
+		self.x_bounds = sys['x_bounds']
 		self.u_limits = sys['u_limits']
 		self.Q = sys['Q']
 		self.R = sys['R']
@@ -45,7 +48,7 @@ class Quadcopter(gym.Env):
 		self.I = sys['I']
 		self.fixed_start = fixed_start
 		self.normalized_actions = normalized_actions
-		self.expand_limits = expand_limits
+		self.normalized_observations = normalized_observations
 		# self.reset()
 
 		# Define action and observation space
@@ -56,58 +59,71 @@ class Quadcopter(gym.Env):
 		else:
 			self.action_space = spaces.Box(low=self.u_limits[:,0], high=self.u_limits[:,1], dtype=np.float32)
 
-		self.observation_space = spaces.Box(low=self.x_limits[:,0], high=self.x_limits[:,1], dtype=np.float32)
+		if (normalized_observations):
+			self.observation_space = spaces.Box(low=-1, high=1, shape=(self.observation_dims.shape[0],), dtype=np.float32)
+		else:
+			self.observation_space = spaces.Box(low=self.x_bounds[self.observation_dims,0], high=self.x_bounds[self.observation_dims,1], dtype=np.float32)
 
 	def step(self, action):
 		# If scaling actions use this
 		if (self.normalized_actions):
 			action = 0.5*((self.u_limits[:,0] + self.u_limits[:,1]) + action*(self.u_limits[:,1] - self.u_limits[:,0]))
-		a = action[:,np.newaxis]
-		x = self.state[self.observation_dims, np.newaxis]
-		cost = sum((x - self.goal) * np.matmul(self.Q, x - self.goal)) + sum((a - self.u0) * np.matmul(self.R, a - self.u0))
-		cost = cost * self.dt
-		reward = -cost[0]
 
-		state_ = self.dyn_rk4(self.state[:,np.newaxis], a, self.dt)
-		observation = state_[self.observation_dims, 0]
+		state_ = self.dyn_rk4(self.state[:,np.newaxis], action[:,np.newaxis], self.dt)
+		state_ = state_[:,0]
+		state_ = np.minimum(self.x_bounds[:,1], np.maximum(self.x_bounds[:,0], state_))
 
-		limit_violation = False
-		if (self.expand_limits):
-			observation = np.minimum(10, np.maximum(-10, observation))
-		else:
-			observation = np.minimum(self.x_limits[:,1], np.maximum(self.x_limits[:,0], observation))
+		cost, reached_goal = self._get_cost(action, state_)
+		reward = -cost
 
-		reached_goal = np.linalg.norm(observation - self.goal[:,0]) < 1e-2
-		self.state = state_[:,0]
-		self.state[self.observation_dims] = observation
+		self.state = state_
 		self.step_count += 1
 
-		if ((self.step_count >= self.horizon) or limit_violation or reached_goal):
+		if ((self.step_count >= self.horizon) or reached_goal):
 			done = True
 			info = {'terminal_state': deepcopy(self.state), 'step_count' : deepcopy(self.step_count)}
 		else:
 			done = False
 			info = {'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)}
 
-		return np.float32(observation), reward, done, False, info
+		return self.get_obs(), reward, done, False, info
 
 	def reset(self, seed=None, options=None, state=None):
 		super().reset(seed=seed)
 		if (state is None):
 			if (self.fixed_start):
-				observation = np.array([0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+				self.state = np.array([0., 0., 0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
 			else:
-				observation = 0.5 * (self.x_limits[:,0] + self.x_limits[:,1]) + 0.4 * (np.random.rand(self.X_DIMS) - 0.5) * (self.x_limits[:,1] - self.x_limits[:,0])
-				observation = np.float32(observation)
+				self.state = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.X_DIMS) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
 		else:
-			observation = state[self.observation_dims]
+			assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
+			self.state = state
 
-		self.state = np.zeros(self.X_DIMS+2)
-		self.state[self.observation_dims] = observation
 		self.step_count = 0
 		info = {'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)}
 
-		return observation, info
+		return self.get_obs(), info
+
+	def get_obs(self, normalized=None):
+		obs = self.state[self.observation_dims]
+		if ((normalized == None) and self.normalized_observations) or (normalized == True):
+			obs_bounds_mid = 0.5*(self.x_bounds[self.observation_dims,1] + self.x_bounds[self.observation_dims,0])
+			obs_bounds_range = 0.5*(self.x_bounds[self.observation_dims,1] - self.x_bounds[self.observation_dims,0])
+			obs = (obs - obs_bounds_mid) / obs_bounds_range
+
+		return np.float32(obs)
+
+	def _get_cost(self, action, state_):
+		x = self.get_obs()
+		x = x[:,np.newaxis]
+		a = action[:,np.newaxis]
+
+		cost = np.sum((x - self.goal) * (self.Q @ (x - self.goal))) + np.sum((a - self.u0) * (self.R @ (a - self.u0)))
+		cost = cost * self.dt
+
+		reached_goal = np.linalg.norm(state_[self.observation_dims] - self.goal[:,0]) <= 1e-2	
+
+		return cost, reached_goal
 
 	def dyn_rk4(self, x, u, dt):
 		k1 = self.dyn_full(x, u)
@@ -127,13 +143,6 @@ class Quadcopter(gym.Env):
 	
 	def dyn_full(self, x, u):
 
-		dx = np.zeros((self.X_DIMS+2, 1))
-		dx[0:2,:] = x[6:8,:] # vx, vy
-		dx[2:,:] = self._dyn(x[2:,:], u)
-
-		return dx
-
-	def _dyn(self, x, u):
 		m = self.m
 		l = self.l
 		g = self.g
@@ -143,13 +152,13 @@ class Quadcopter(gym.Env):
 		I2 = II[1,1]
 		I3 = II[2,2]
 
-		x2 = x[1,0]
-		x3 = x[2,0]
-		x4 = x[3,0]
-		x7 = x[6,0]
-		x8 = x[7,0]
-		x9 = x[8,0]
-		x10 = x[9,0]
+		x2 = x[3,0]
+		x3 = x[4,0]
+		x4 = x[5,0]
+		x7 = x[8,0]
+		x8 = x[9,0]
+		x9 = x[10,0]
+		x10 = x[11,0]
 
 		u1 = u[0,0]
 		u2 = u[1,0]
@@ -186,16 +195,13 @@ class Quadcopter(gym.Env):
 		mt3 = t25*(t5*x9-t2*t3*x10)*(t3*t5*x8-t2*t6*x9)+t21*t22*t24*(-t9*t15*x8*x9-t10*t20*x8*x9+I2*bk*t2*u4+I3*l*t5*u3+I1*I2*t15*x8*x9+I1*I3*t20*x8*x9+t6*t9*t15*x9*x10+t6*t10*t20*x9*x10+t2*t3*t5*t6*t9*t14-t2*t3*t5*t6*t10*t14-t2*t3*t5*t9*x8*x10+t2*t3*t5*t10*x8*x10-I1*I2*t6*t15*x9*x10-I1*I3*t6*t20*x9*x10-I1*I2*t2*t3*t5*t6*t14+I1*I3*t2*t3*t5*t6*t14+I1*I2*t2*t3*t5*x8*x10-I1*I3*t2*t3*t5*x8*x10)+t25*x8*np.cos(x2-x3)*(t2*x9+t3*t5*x10)
 
 		dx = np.zeros((self.X_DIMS, 1))
-		dx[0,0] = x7
-		dx[1,0] = x8
-		dx[2,0] = x9
-		dx[3,0] = x10
-		dx[4,0] = t23*u1*(t5*t7+t2*t4*t6)
-		dx[5,0] = -t23*u1*(t4*t5-t2*t6*t7)
-		dx[6,0] = -g+t2*t3*t23*u1
-		dx[7,0] = (t21*t22*t24*(et1+et2))/I1
-		dx[8,0] = mt2
-		dx[9,0] = mt3
+		dx[0:6,:] = x[6:12,:]
+		dx[6,0] = t23*u1*(t5*t7+t2*t4*t6)
+		dx[7,0] = -t23*u1*(t4*t5-t2*t6*t7)
+		dx[8,0] = -g+t2*t3*t23*u1
+		dx[9,0] = (t21*t22*t24*(et1+et2))/I1
+		dx[10,0] = mt2
+		dx[11,0] = mt3
 
 		return dx
 

@@ -27,28 +27,33 @@ import wandb
 
 def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 	# sample a config
+	criteria = sweep_cfg.pop('criteria', dict())
 	cfg = deepcopy(default_cfg)
 	for cfg_type in sweep_cfg.keys():
 		assert (cfg_type=='environment') or (cfg_type=='algorithm') or (cfg_type=='policy'), 'hyper-parameter group %s must be of type environment/algorithm/policy' % cfg_type
 
 		for k, v in sweep_cfg[cfg_type].items():
 			if (sweep_cfg[cfg_type][k]['type'] == 'int'):
+				log = sweep_cfg[cfg_type][k].get('log', False)
 				steps = sweep_cfg[cfg_type][k].get('steps', 1)
 				sampled_param = {
 					k: trial.suggest_int(
 						name=k,
 						low=sweep_cfg[cfg_type][k]['low'],
 						high=sweep_cfg[cfg_type][k]['high'],
+						log=log,
 						step=steps
 					)
 				}
 			elif (sweep_cfg[cfg_type][k]['type'] == 'float'):
+				log = sweep_cfg[cfg_type][k].get('log', False)
 				steps = sweep_cfg[cfg_type][k].get('steps', None) 
 				sampled_param = {
 					k: trial.suggest_float(
 						name=k,
 						low=sweep_cfg[cfg_type][k]['low'],
 						high=sweep_cfg[cfg_type][k]['high'],
+						log=log,
 						step=steps
 					)
 				}
@@ -89,7 +94,7 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 		trial=trial, 
 		eval_every_timestep=eval_every_timestep, 
 		eval_env=eval_env,
-		num_eval_episodes=5,
+		eval_criteria=criteria,
 		save_path=trial_save_dir,
 		save_prefix=cfg['policy'].get('save_prefix', 'model')
 	)
@@ -108,9 +113,16 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 
 	# evaluate the model
 	test_env = gym.make(cfg['environment']['name'], **cfg['environment'].get('environment_kwargs', dict()))
-	ep_reward, ep_discounted_reward, final_err = evaluate_model(model, test_env, 5)
-	
-	return np.mean(ep_discounted_reward)
+	num_episodes = criteria.get('num_episodes', 20)
+	ep_reward, ep_discounted_reward, final_err = evaluate_model(model, test_env, num_episodes)
+	eval_metric = criteria.get('type', 'ep_discounted_reward')
+
+	if (eval_metric == 'ep_reward'):
+		return np.mean(ep_reward)
+	elif (eval_metric == 'ep_discounted_reward'):
+		return np.mean(ep_discounted_reward)
+	elif (eval_metric == 'final_err'):
+		return -np.mean(np.abs(final_err))
 
 def initialize_model(cfg: Dict, save_dir: str):
 	# initialize the policy args
@@ -122,8 +134,7 @@ def initialize_model(cfg: Dict, save_dir: str):
 		if (policy_args['policy_kwargs']['activation_fn'] == 'relu'):
 			policy_args['policy_kwargs']['activation_fn'] = nn.ReLU
 		elif (policy_args['policy_kwargs']['activation_fn'] == 'elu'):
-			# TODO: Add support for ELU 
-			pass
+			policy_args['policy_kwargs']['activation_fn'] = nn.ELU
 		elif (policy_args['policy_kwargs']['activation_fn'] == 'tanh'):
 			policy_args['policy_kwargs']['activation_fn'] = nn.Tanh
 
@@ -169,7 +180,7 @@ def initialize_model(cfg: Dict, save_dir: str):
 		model = A2CwReg('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 	elif (algorithm == 'PPO'):
 		model = PPO('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
-	
+
 	logger = configure(folder=save_dir, format_strings=["tensorboard"])
 	model.set_logger(logger)
 
@@ -192,6 +203,7 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int):
 			ep_discounted_reward[ee] += (discount*reward)
 			discount *= model.gamma
 
+		obs = test_env.get_obs(normalized=False)
 		final_err[ee] = np.linalg.norm(obs.reshape(-1) - test_env.goal.reshape(-1))
 
 	return ep_reward, ep_discounted_reward, final_err
@@ -202,13 +214,14 @@ class PruneTrialCallback(BaseCallback):
 
 	:param verbose: (int) Verbosity level 0: not output 1: info 2: debug
 	"""
-	def __init__(self, trial, eval_every_timestep, eval_env, num_eval_episodes, save_path, save_prefix='model', verbose=0):
+	def __init__(self, trial, eval_every_timestep, eval_env, eval_criteria: Dict, save_path: str, save_prefix='model', verbose=0):
 		super(PruneTrialCallback, self).__init__(verbose)
 
 		self.trial = trial
 		self.eval_every_timestep = eval_every_timestep
 		self.eval_env = eval_env
-		self.num_eval_episodes = num_eval_episodes
+		self.num_eval_episodes = eval_criteria.get('num_episodes', 20)
+		self.eval_metric = eval_criteria.get('type', 'ep_discounted_reward')
 		self.save_prefix = save_prefix
 		self.save_path = save_path
 
@@ -226,7 +239,13 @@ class PruneTrialCallback(BaseCallback):
 			ep_reward, ep_discounted_reward, final_err = evaluate_model(self.model, self.eval_env, self.num_eval_episodes)
 			self.curr_check_point_id = check_point_id
 
-			self.trial.report(np.mean(ep_discounted_reward), self.model.num_timesteps+1)
+			if (self.eval_metric == 'ep_reward'):
+				self.trial.report(np.mean(ep_reward), self.model.num_timesteps+1)
+			elif (self.eval_metric == 'ep_discounted_reward'):
+				self.trial.report(np.mean(ep_discounted_reward), self.model.num_timesteps+1)
+			elif (self.eval_metric == 'final_err'):
+				self.trial.report(-np.mean(np.abs(final_err)), self.model.num_timesteps+1)
+
 			if (self.trial.should_prune()):
 				raise optuna.TrialPruned()
 			else:

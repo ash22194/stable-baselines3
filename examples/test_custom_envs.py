@@ -7,6 +7,7 @@ from ruamel.yaml import YAML
 import gymnasium as gym
 import numpy as np
 from copy import deepcopy
+from scipy.linalg import solve_discrete_are, expm
 
 from stable_baselines3 import A2CwReg, PPO
 from stable_baselines3.common.env_checker import check_env
@@ -15,10 +16,12 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=F
 	ep_reward = np.zeros(num_episodes)
 	ep_discounted_reward = np.zeros(num_episodes)
 	final_err = np.zeros(num_episodes)
+	start_states = np.zeros((test_env.X_DIMS, num_episodes))
 
 	for ee in range(num_episodes):
 		obs, _ = test_env.reset()
-		start = deepcopy(obs)
+		start_states[:,ee] = test_env.state
+		start_obs = deepcopy(obs)
 		done = False
 		discount = 1
 		while (not done):
@@ -35,9 +38,94 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=F
 		if (print_outcomes):
 			with np.printoptions(precision=3, suppress=True):
 				print('Episode %d :' % ee)
+				print('---Start obs : ', start_obs)
+				print('---End obs : ', obs)
+				print('---Reward (discounted) : %f (%f)' % (ep_reward[ee], ep_discounted_reward[ee]))
+				print('---Final : %f' % final_err[ee])
+				print()
+
+	return ep_reward, ep_discounted_reward, final_err, start_states
+
+def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_outcomes=False):
+	
+	assert starts.shape[1]==num_episodes, 'Number of starts and number of episodes do not match'
+
+	test_env.reset()
+	x0 = np.zeros((test_env.state.shape[0], 1))
+	x0[test_env.observation_dims,0] = test_env.goal[:,0]
+	goal = test_env.goal
+	u0 = test_env.u0 
+	nx = x0.shape[0]
+	nu = u0.shape[0]
+
+	A = np.zeros((nx, nx))
+	B = np.zeros((nx, nu))
+	eps = 1e-6
+	for xx in range(nx):
+		ev = np.zeros((nx, 1))
+		ev[xx,0] = eps
+		xp = x0 + ev
+		xm = x0 - ev
+
+		A[:,xx:(xx+1)] = (test_env.dyn_full(xp, u0) - test_env.dyn_full(xm, u0)) / (2*eps)
+
+	for uu in range(nu):
+		eu = np.zeros((nu, 1))
+		eu[uu] = eps
+		up = u0 + eu
+		um = u0 - eu
+
+		B[:,uu:(uu+1)] = (test_env.dyn_full(x0, up) - test_env.dyn_full(x0, um)) / (2*eps)
+
+	A = A[test_env.observation_dims,:]
+	A = A[:,test_env.observation_dims]
+	B = B[test_env.observation_dims,:]
+	
+	Ad = expm(A*test_env.dt)
+	Bd = B*test_env.dt
+
+	# discrete time
+	Qd = test_env.Q*test_env.dt
+	Rd = test_env.R*test_env.dt
+	gamma_ = test_env.gamma_
+	P = solve_discrete_are(Ad*np.sqrt(gamma_), Bd, Qd, Rd/gamma_)
+	K = gamma_ * np.linalg.inv(Rd + gamma_*(Bd.T @ P) @ Bd) @ (Bd.T @ P) @ Ad
+	goal = goal[:,0]
+	u0 = u0[:,0]
+	u_limits = test_env.u_limits
+	normalized_actions = test_env.normalized_actions
+
+	ep_reward = np.zeros(num_episodes)
+	ep_discounted_reward = np.zeros(num_episodes)
+	final_err = np.zeros(num_episodes)
+	for ee in range(num_episodes):
+		obs, _ = test_env.reset(state=starts[:,ee])
+		start = deepcopy(obs)
+		done = False
+		discount = 1
+		while (not done):
+			action = (u0 - K @ (obs - goal))
+			action = np.maximum(u_limits[:,0], np.minimum(u_limits[:,1], action))
+			if (normalized_actions):
+				action = (2*action - (u_limits[:,1] + u_limits[:,0])) / (u_limits[:,1] - u_limits[:,0])
+
+			obs, reward, done, _, info = test_env.step(action)
+			test_env.render()
+
+			ep_reward[ee] += reward
+			ep_discounted_reward[ee] += (discount*reward)
+			discount *= gamma_
+
+		final_err[ee] = np.linalg.norm(obs.reshape(-1) - test_env.goal.reshape(-1))
+
+		if (print_outcomes):
+			with np.printoptions(precision=3, suppress=True):
+				print('Episode %d :' % ee)
 				print('---Start state : ', start)
 				print('---End state : ', obs)
 				print('---Reward (discounted) : %f (%f)' % (ep_reward[ee], ep_discounted_reward[ee]))
+				print('---Final : %f' % final_err[ee])
+				print()
 
 	return ep_reward, ep_discounted_reward, final_err
 
@@ -72,8 +160,9 @@ def main():
 		model = PPO.load(ff_load)
 	elif (cfg['algorithm']['name'] == 'A2C'):
 		pass
-	
-	evaluate_model(model, test_env, num_episodes=5, print_outcomes=True)
+	test_env.gamma_ = model.gamma
+	_, _, _, starts = evaluate_model(model, test_env, num_episodes=10, print_outcomes=True)
+	evaluate_lqr_controller(starts, test_env, num_episodes=starts.shape[1], print_outcomes=True)
 
 if __name__=='__main__':
 	main()
