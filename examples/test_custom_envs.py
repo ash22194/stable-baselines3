@@ -21,7 +21,7 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=F
 	for ee in range(num_episodes):
 		obs, _ = test_env.reset()
 		start_states[:,ee] = test_env.state
-		start_obs = deepcopy(obs)
+		start_obs = test_env.get_obs(normalized=False)
 		done = False
 		discount = 1
 		while (not done):
@@ -33,13 +33,14 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=F
 			ep_discounted_reward[ee] += (discount*reward)
 			discount *= model.gamma
 
-		final_err[ee] = np.linalg.norm(obs.reshape(-1) - test_env.goal.reshape(-1))
+		end_obs = test_env.get_obs(normalized=False)
+		final_err[ee] = np.linalg.norm(end_obs.reshape(-1) - test_env.goal.reshape(-1))
 
 		if (print_outcomes):
 			with np.printoptions(precision=3, suppress=True):
 				print('Episode %d :' % ee)
 				print('---Start obs : ', start_obs)
-				print('---End obs : ', obs)
+				print('---End obs : ', end_obs)
 				print('---Reward (discounted) : %f (%f)' % (ep_reward[ee], ep_discounted_reward[ee]))
 				print('---Final : %f' % final_err[ee])
 				print()
@@ -99,8 +100,9 @@ def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_
 	ep_discounted_reward = np.zeros(num_episodes)
 	final_err = np.zeros(num_episodes)
 	for ee in range(num_episodes):
-		obs, _ = test_env.reset(state=starts[:,ee])
-		start = deepcopy(obs)
+		_, _ = test_env.reset(state=starts[:,ee])
+		obs = test_env.get_obs(normalized=False)
+		start_obs = deepcopy(obs)
 		done = False
 		discount = 1
 		while (not done):
@@ -109,20 +111,22 @@ def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_
 			if (normalized_actions):
 				action = (2*action - (u_limits[:,1] + u_limits[:,0])) / (u_limits[:,1] - u_limits[:,0])
 
-			obs, reward, done, _, info = test_env.step(action)
+			_, reward, done, _, info = test_env.step(action)
+			obs = test_env.get_obs(normalized=False)
 			test_env.render()
 
 			ep_reward[ee] += reward
 			ep_discounted_reward[ee] += (discount*reward)
 			discount *= gamma_
 
-		final_err[ee] = np.linalg.norm(obs.reshape(-1) - test_env.goal.reshape(-1))
+		end_obs = test_env.get_obs(normalized=False)
+		final_err[ee] = np.linalg.norm(end_obs.reshape(-1) - test_env.goal.reshape(-1))
 
 		if (print_outcomes):
 			with np.printoptions(precision=3, suppress=True):
 				print('Episode %d :' % ee)
-				print('---Start state : ', start)
-				print('---End state : ', obs)
+				print('---Start obs : ', start_obs)
+				print('---End obs : ', end_obs)
 				print('---Reward (discounted) : %f (%f)' % (ep_reward[ee], ep_discounted_reward[ee]))
 				print('---Final : %f' % final_err[ee])
 				print()
