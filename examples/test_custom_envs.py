@@ -125,8 +125,8 @@ def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_
 		if (print_outcomes):
 			with np.printoptions(precision=3, suppress=True):
 				print('Episode %d :' % ee)
-				print('---Start state : ', start_obs)
-				print('---End state : ', end_obs)
+				print('---Start obs : ', start_obs)
+				print('---End obs : ', end_obs)
 				print('---Reward (discounted) : %f (%f)' % (ep_reward[ee], ep_discounted_reward[ee]))
 				print('---Final : %f' % final_err[ee])
 				print()

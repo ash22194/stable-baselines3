@@ -115,7 +115,7 @@ class Quadcopter(gym.Env):
 		return np.float32(obs)
 
 	def _get_cost(self, action, state_):
-		x = self.get_obs()
+		x = self.get_obs(normalized=False)
 		x = x[:,np.newaxis]
 		a = action[:,np.newaxis]
 
