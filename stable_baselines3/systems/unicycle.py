@@ -33,7 +33,7 @@ class Unicycle(gym.Env):
 			'goal': goal, 'u0': np.zeros((2,1)), 'Q': np.diag([0., 2.5, 2.5, 1., 0.25, 0.001, 0.001, 0.05, 0.25]), 'R': (np.eye(2) / 100.),\
 			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-2., 2.], [-1., 1.], [-1., 1.], [15., 25.], [-2., 2.]]),\
 			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/2, np.pi/2], [-np.pi/2, np.pi/2], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-16., 16.], [-8., 8.], [-8., 8.], [5., 35.], [-16., 16.]]),\
-			'u_limits': np.array([[-24., 24.], [-20., 20.]])}
+			'u_limits': np.array([[-24., 24.], [-80., 80.]])}
 		sys_.update(sys)
 		sys_['lambda_'] = (1. - sys_['gamma_']) / sys_['dt']
 		sys.update(sys_)
@@ -49,6 +49,8 @@ class Unicycle(gym.Env):
 		self.horizon = round(self.T / self.dt)
 		self.x_sample_limits = sys['x_sample_limits'] # reset within these limits
 		self.x_bounds = sys['x_bounds']
+		self.x_bounds[:,0] -= 50.
+		self.x_bounds[:,1] += 50.
 		self.u_limits = sys['u_limits']
 		self.Q = sys['Q']
 		self.R = sys['R']
@@ -68,6 +70,7 @@ class Unicycle(gym.Env):
 		self.g = sys['g']
 		self.alpha = sys['alpha']
 		self.fcoeff = sys['fcoeff']
+		self.baumgarte_factor = 0.1
 
 		self.fixed_start = fixed_start
 		self.normalized_actions = normalized_actions
@@ -91,7 +94,7 @@ class Unicycle(gym.Env):
 		# If scaling actions use this
 		if (self.normalized_actions):
 			action = 0.5*((self.u_limits[:,0] + self.u_limits[:,1]) + action*(self.u_limits[:,1] - self.u_limits[:,0]))
-		
+
 		state_ = self.dyn_rk4(self.state[:,np.newaxis], action[:,np.newaxis], self.dt)
 		state_ = state_[:,0]
 		state_ = np.minimum(self.x_bounds[:,1], np.maximum(self.x_bounds[:,0], state_))
@@ -99,15 +102,17 @@ class Unicycle(gym.Env):
 		cost, reached_goal = self._get_cost(action, state_)
 		reward = -cost
 
+		e_p, e_v, e_a = self.err_contact(self.state[:,np.newaxis], action[:,np.newaxis])
+		info = dict(contact_info={'err_p': e_p, 'err_v': e_v, 'err_a': e_a})
 		self.state = state_
 		self.step_count += 1
 
 		if ((self.step_count >= self.horizon) or reached_goal):
 			done = True
-			info = {'terminal_state': deepcopy(self.state), 'step_count' : deepcopy(self.step_count)}
+			info.update({'terminal_state': deepcopy(self.state), 'step_count' : deepcopy(self.step_count)})
 		else:
 			done = False
-			info = {'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)}
+			info.update({'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)})
 
 		return self.get_obs(), reward, done, False, info
 
@@ -115,7 +120,7 @@ class Unicycle(gym.Env):
 		super().reset(seed=seed)
 		if (state is None):
 			if (self.fixed_start):
-				sample = np.array([0.2, 0.3, 0.1, 0., 0.1, 0., 0.1, -0.1, 5., 0.])
+				sample = np.array([0.2, 0.3, 0.1, 0., 0.1, 0., 0., 0., 5., 0.])
 			else:
 				sample = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
 		else:
@@ -126,27 +131,13 @@ class Unicycle(gym.Env):
 		self.state = np.zeros(self.X_DIMS)
 		self.state[self.independent_sampling_dims] = sample
 
-		yaw = sample[0]
-		roll = sample[1]
-		pitch = sample[2]
-		dumbell_yaw = sample[4]
-		v_yaw = sample[5]
-		v_roll = sample[6]
-		v_pitch = sample[7]
-		v_wheel = sample[8]
-		v_dumbell_yaw = sample[9]
-
-		Rframe = transfm.Rotation.from_euler('yxz', [pitch, roll, yaw]).as_matrix()
-		Rwheel = transfm.Rotation.from_euler('yxz', [0., roll, yaw]).as_matrix()
-		com = Rframe @ np.array([0., 0., self.rf]) + Rwheel @ np.array([0., 0., self.rw])
-		self.state[:3] = com
-
-		J = self._jacobian_contact(np.array([yaw, roll, pitch]))
-		v_com = -np.linalg.inv(J[:,:3]) @ J[:,3:] @ np.array([v_yaw, v_roll, v_pitch, v_wheel, v_dumbell_yaw])
-		self.state[8:11] = v_com
+		err_p, err_v, _ = self.err_contact(self.state[:,np.newaxis], np.zeros((self.U_DIMS, 1)))
+		self.state[:3] = -err_p
+		self.state[8:11] = -err_v
 
 		self.step_count = 0
-		info = {'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)}
+		info = dict(contact_info={'err_p':err_p, 'err_v':err_v, 'err_a':np.zeros(3)})
+		info.update({'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)})
 
 		return self.get_obs(), info
 
@@ -160,7 +151,7 @@ class Unicycle(gym.Env):
 		return np.float32(obs)
 	
 	def _get_cost(self, action, state_):
-		x = self.get_obs()
+		x = self.get_obs(normalized=False)
 		x = x[:,np.newaxis]
 		a = action[:,np.newaxis]
 
@@ -433,7 +424,11 @@ class Unicycle(gym.Env):
 		nle[6,0] = t4*v_th*(t11*t84*v_ph+rf*t7*t8*v_om)*-2.0-t7*t60*t124+rf*t8*t11*t114-t7*t9*t36*t84-rw*t7*t87*v_ph
 		nle[7,0] = t4*t35*t60+t4*t36*t84-rf*t8*t9*v_om*v_th*2.0
 
-		acc = - np.linalg.solve(M, nle)
+		# Add baumgarte stabilization
+		J = self._jacobian_contact(x[3:8,0])
+		nle[5:8,0] += self.baumgarte_factor * (J @ x[8:16,0])
+
+		acc = np.linalg.solve(M, -nle)
 		acc[6,0] -= acc[5,0]
 
 		dx = np.zeros((16, 1))
@@ -450,13 +445,15 @@ class Unicycle(gym.Env):
 
 		return dx
 	
-	def _jacobian_contact(self, yrp):
-		
+	def _jacobian_contact(self, angles):
+		# angles - [base_yaw, base_roll, base_pitch, wheel_pitch, dumbell_yaw]
 		rw = self.rw
 		rf = self.rf
-		ph = yrp[0]
-		th = yrp[1]
-		om = yrp[2]
+		ph = angles[0]
+		th = angles[1]
+		om = angles[2]
+		ps = angles[3] + om
+		ne = angles[4]
 
 		J = np.zeros((3, 8))
 		J[:, :3] = np.eye(3)
@@ -464,11 +461,51 @@ class Unicycle(gym.Env):
 		J[1, 3:8] = np.array([-((rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)) - rf*np.cos(ph)*np.sin(om), np.cos(th)*np.cos(ph)*(rw + rf*np.cos(om)), -(rf*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om))), -(rw*np.sin(ph)), 0.])
 		J[2, 3:8] = np.array([0., (rw + rf*np.cos(om))*np.sin(th), rf*np.cos(th)*np.sin(om), 0., 0.])
 		
-		J[:, 6] -= J[:, 5]
+		# v = ... + J[:,5] * v_om + J[:,6] * (v_ps + v_om)
+		# v = ... + (J[:,5] + J[:,6]) * v_om + J[:,6] * v_ps
+		J[:, 5] += J[:, 6]
 
 		return J
 
-	def _dyn_full_ana(self, x, u):
+	def _drift_contact(self, angles, d_angles):
+
+		rw = self.rw
+		rf = self.rf
+		ph = angles[0]
+		th = angles[1]
+		om = angles[2]
+		ps = angles[3] + om
+		ne = angles[4]
+		v_ph = d_angles[0]
+		v_th = d_angles[1]
+		v_om = d_angles[2]
+		v_ps = d_angles[3] + v_om
+		v_ne = d_angles[4]
+
+		d = np.array([
+			[(rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)*v_th**2 + rw*np.sin(ph)*v_ph*(np.sin(th)*v_ph + v_ps) + 2*np.cos(th)*v_th*(-(np.cos(ph)*(rw + rf*np.cos(om))*v_ph) + rf*np.sin(ph)*np.sin(om)*v_om) + rf*np.cos(ph)*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2) + rf*np.cos(om)*np.sin(ph)*(2*v_ph*v_om + np.sin(th)*(v_ph**2 + v_om**2))],
+			[-(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)*v_th**2) - rw*np.cos(ph)*v_ph*(np.sin(th)*v_ph + v_ps) - 2*np.cos(th)*v_th*((rw + rf*np.cos(om))*np.sin(ph)*v_ph + rf*np.cos(ph)*np.sin(om)*v_om) + rf*np.sin(ph)*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2) - rf*np.cos(ph)*np.cos(om)*(2*v_ph*v_om + np.sin(th)*(v_ph**2 + v_om**2))],
+			[np.cos(th)*(rw + rf*np.cos(om))*v_th**2 - 2*rf*np.sin(th)*np.sin(om)*v_th*v_om + rf*np.cos(th)*np.cos(om)*v_om**2]
+		])
+
+		return d
+	
+	def err_contact(self, x, u):
+
+		dx = self.dyn_full(x, u)
+		c_J = self._jacobian_contact(x[3:8,0])
+		c_d = self._drift_contact(x[3:8,0], dx[3:8,0])
+
+		Rframe = transfm.Rotation.from_euler('yxz', [x[5,0], x[4,0], x[3,0]]).as_matrix()
+		Rwheel = transfm.Rotation.from_euler('yxz', [0., x[4,0], x[3,0]]).as_matrix()
+		err_p = x[:3,0] + Rframe @ np.array([0., 0., -self.rf]) + Rwheel @ np.array([0., 0., -self.rw])
+		err_p[:2] = 0.
+		err_v = c_J @ dx[:8,0]
+		err_a = c_J @ dx[8:,0] + c_d[:,0]
+
+		return err_p, err_v, err_a
+
+	def dyn_full_ana(self, x, u):
 		
 		md = self.md
 		mf = self.mf
@@ -2472,7 +2509,7 @@ class Unicycle(gym.Env):
 		dx[11,0] = et25+et26
 		dx[12,0] = et27+et28+et29
 		dx[13,0] = et30+et31
-		dx[14,0] = et39+et40+et41 - et30+et31
+		dx[14,0] = et39+et40+et41 - (et30+et31)
 		dx[15,0] = et42+et43+et44+et45+et46
 
 		return dx
