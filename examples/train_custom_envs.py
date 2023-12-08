@@ -4,6 +4,7 @@ import os
 import argparse
 from shutil import copyfile
 from ruamel.yaml import YAML
+from cProfile import Profile
 
 import gymnasium as gym
 import numpy as np
@@ -125,9 +126,11 @@ def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--env_name', type=str, default='linearsystem', help='environment name')
 	parser.add_argument('--run', type=int, default=None, help='run number')
+	parser.add_argument('--profile', default=False, action='store_true', help='profile this run?')
 	args = parser.parse_args()
 	env_name = args.env_name
 	run_id = args.run
+	profile_run = args.profile
 
 	cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, 'sweep_optimized_cfg.yaml')
 	if (not os.path.isfile(cfg_abs_path)):
@@ -141,6 +144,10 @@ def main():
 	model_load = model.num_timesteps > 0
 	log_interval = 1 # number of steps after which logging happens = (num_envs*n_steps_to_update)*log_interval
 	if ((total_timesteps-model.num_timesteps) > 0):
+		if (profile_run):
+			prof = Profile()
+			prof.enable()
+
 		model.learn(
 			total_timesteps=total_timesteps-model.num_timesteps,
 			log_interval=log_interval,
@@ -148,11 +155,16 @@ def main():
 			reset_num_timesteps=(not model_load)
 		)
 
+		if (profile_run):
+			prof.disable()
+			prof.create_stats()
+			prof.dump_stats(os.path.join(model.logger.dir, 'run_profile'))
+
 	# evaluate the model
 	test_env = gym.make(cfg['environment']['name'], **cfg['environment'].get('environment_kwargs', dict()))
 	for ee in range(5):
 		obs, _ = test_env.reset()
-		start = obs.copy()
+		start = test_env.get_obs(normalized=False)
 		done = False
 		ep_reward = 0
 		ep_discounted_reward = 0
@@ -165,12 +177,11 @@ def main():
 			ep_discounted_reward += (discount*reward)
 			discount *= model.gamma
 
-		print(
-			'start state :', start,
-			', final state :', obs,
-			', reward :', ep_reward,
-			', reward (discounted) :', ep_discounted_reward
-		)
+		end = test_env.get_obs(normalized=False)
+		with np.printoptions(precision=3, suppress=True):
+			print('start obs :', start)
+			print('final obs :', end)
+			print('reward (discounted) : %f (%f)' %(ep_reward, ep_discounted_reward))
 
 if __name__=='__main__':
 	main()
