@@ -11,7 +11,7 @@ import numpy as np
 from typing import Callable, Dict
 
 from stable_baselines3 import A2CwReg, PPO
-from stable_baselines3.common.callbacks import SaveEveryCallback
+from stable_baselines3.common.callbacks import CustomSaveLogCallback
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.learning_schedules import linear_schedule, decay_sawtooth_schedule, exponential_schedule
@@ -112,12 +112,15 @@ def initialize_model(config_file_path: str, save_dir: str, run: int = None):
 		logger = configure_logger(verbose=1, tensorboard_log=log_path, tb_log_name=algorithm, reset_num_timesteps=True)
 		# copy config file 
 		copyfile(config_file_path, os.path.join(logger.get_dir(), 'cfg.yaml'))
+		env_name = os.path.basename(os.path.dirname(config_file_path))
+		class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/systems', env_name + '.py')
+		copyfile(class_file_abs_path, os.path.join(logger.get_dir(), env_name + '.py'))
 		model.set_logger(logger)
 
 	save_every_timestep = algorithm_args.get('save_every_timestep')
 	if (save_every_timestep is None):
 		save_every_timestep = algorithm_args.get('total_timesteps')
-	callback = SaveEveryCallback(save_every_timestep=save_every_timestep, save_path=logger.get_dir(), save_prefix=policy_args.get('save_prefix'))
+	callback = CustomSaveLogCallback(save_every_timestep=save_every_timestep, save_path=logger.get_dir(), save_prefix=policy_args.get('save_prefix'))
 
 	return model, callback, cfg
 

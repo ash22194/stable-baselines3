@@ -53,7 +53,7 @@ def main():
 		env = gym.make('Quadcopter-v0', normalized_observations=False)
 
 	elif (args.env_name == 'unicycle'):
-		env = gym.make('Unicycle-v0', fixed_start=False, normalized_observations=False)
+		env = gym.make('Unicycle-v0', fixed_start=True, normalized_observations=False)
 
 	# compute linearizations
 	A, B, Ad, Bd = compute_dynamics_linearizations(env)
@@ -79,8 +79,10 @@ def main():
 	u_limits = env.u_limits
 
 	for nn in range(num_episodes):
-		obs, _ = env.reset()
-		start = obs
+		_, _ = env.reset()
+		env.render()
+		obs = env.get_obs(normalized=False)
+		start = deepcopy(obs)
 		done = False
 		value = 0
 		min_obs = np.inf*np.ones(obs.shape)
@@ -91,7 +93,9 @@ def main():
 			if (normalized_actions):
 				action = (2*action - (u_limits[:,1] + u_limits[:,0])) / (u_limits[:,1] - u_limits[:,0])
 			
-			obs, reward, done, _, info = env.step(action)
+			_, reward, done, _, info = env.step(action)
+			obs = env.get_obs(normalized=False)
+			env.render()
 			min_obs[obs < min_obs] = obs[obs < min_obs]
 			max_obs[obs > max_obs] = obs[obs > max_obs]
 			value += reward
