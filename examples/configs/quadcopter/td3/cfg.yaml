@@ -1,0 +1,31 @@
+environment:
+  name: Quadcopter-v0
+  num_envs: 2
+  environment_kwargs:
+    normalized_actions: true
+    normalized_observations: true
+    fixed_start: false
+
+algorithm:
+  name: TD3
+  total_timesteps: 15000000
+  save_every_timestep: 10000000
+  algorithm_kwargs:
+    gamma: 0.9990588957223104
+    learning_rate: 0.001177786412072332
+    learning_rate_schedule:
+      type: lin
+
+    train_freq: 250
+    batch_size: 1000
+    gradient_steps: 10
+    learning_starts: 10000
+    buffer_size: 100000
+
+policy:
+  save_prefix: model
+  policy_kwargs:
+    net_arch:
+      pi: [256, 256]
+      qf: [256, 256]
+    activation_fn: relu
