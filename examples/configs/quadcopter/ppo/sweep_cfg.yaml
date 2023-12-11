@@ -1,0 +1,36 @@
+criteria:
+  type: 'final_err'
+  num_episodes: 20
+
+environment:
+  num_envs:
+    type: 'int'
+    low: 1
+    high: 5
+
+algorithm:
+  total_timesteps:
+    type: 'categorical'
+    choices: [15000000, 20000000]
+
+  n_steps:
+    type: 'int'
+    low: 128
+    high: 2048
+    log: True
+
+  n_epochs:
+    type: 'int'
+    low: 1
+    high: 10
+  
+  learning_rate:
+    type: 'float'
+    low: 0.0003
+    high: 0.002
+
+policy:
+  log_std_init:
+    type: 'float'
+    low: -4
+    high: 0.2

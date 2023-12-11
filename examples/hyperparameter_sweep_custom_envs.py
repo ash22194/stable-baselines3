@@ -11,7 +11,7 @@ import gymnasium as gym
 import numpy as np
 from typing import Callable, Dict
 
-from stable_baselines3 import A2CwReg, PPO
+from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.learning_schedules import linear_schedule, decay_sawtooth_schedule, exponential_schedule
@@ -117,6 +117,7 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 	ep_reward, ep_discounted_reward, final_err = evaluate_model(model, test_env, num_episodes)
 	eval_metric = criteria.get('type', 'ep_discounted_reward')
 
+	print('Reporting ', eval_metric)
 	if (eval_metric == 'ep_reward'):
 		return np.mean(ep_reward)
 	elif (eval_metric == 'ep_discounted_reward'):
@@ -126,7 +127,7 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 
 def initialize_model(cfg: Dict, save_dir: str):
 	# initialize the policy args
-	policy_args = cfg['policy']
+	policy_args = deepcopy(cfg['policy'])
 	if ('policy_kwargs' not in policy_args.keys()):
 		policy_args['policy_kwargs'] = dict()
 
@@ -152,12 +153,12 @@ def initialize_model(cfg: Dict, save_dir: str):
 			policy_args['policy_kwargs']['optimizer_kwargs'] = None
 
 	# initialize the environment
-	environment_args = cfg['environment']
+	environment_args = deepcopy(cfg['environment'])
 	num_envs = environment_args.get('num_envs')
 	env = make_vec_env(environment_args.get('name'), num_envs, env_kwargs=environment_args.get('environment_kwargs', dict()))
 
 	# initialize the agent
-	algorithm_args = cfg['algorithm']
+	algorithm_args = deepcopy(cfg['algorithm'])
 	if ('algorithm_kwargs' not in algorithm_args.keys()):
 		algorithm_args['algorithm_kwargs'] = dict()
 	
@@ -180,7 +181,8 @@ def initialize_model(cfg: Dict, save_dir: str):
 		model = A2CwReg('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 	elif (algorithm == 'PPO'):
 		model = PPO('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
-
+	elif (algorithm == 'TD3'):
+		model = TD3('TD3Policy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 	logger = configure(folder=save_dir, format_strings=["tensorboard"])
 	model.set_logger(logger)
 
@@ -239,6 +241,7 @@ class PruneTrialCallback(BaseCallback):
 			ep_reward, ep_discounted_reward, final_err = evaluate_model(self.model, self.eval_env, self.num_eval_episodes)
 			self.curr_check_point_id = check_point_id
 
+			print('Reporting ', self.eval_metric)
 			if (self.eval_metric == 'ep_reward'):
 				self.trial.report(np.mean(ep_reward), self.model.num_timesteps+1)
 			elif (self.eval_metric == 'ep_discounted_reward'):
@@ -265,20 +268,25 @@ def main():
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--env_name', type=str, default='linearsystem', help='environment name')
+	parser.add_argument('--algorithm', type=str, default='ppo', help='algorithm to train with')
 	parser.add_argument('--num_trials', type=int, default=10, help='number of trials to evaluate')
 
 	args = parser.parse_args()
 	env_name = args.env_name
+	algo = args.algorithm.lower()
 	num_trials = args.num_trials
 
 	# load cfg files
-	default_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, 'cfg.yaml')
-	sweep_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, 'sweep_cfg.yaml') 
+	default_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, algo, 'cfg.yaml')
+	class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/systems', env_name + '.py')
+	sweep_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, algo, 'sweep_cfg.yaml') 
 	default_cfg = YAML().load(open(default_cfg_abs_path, 'r'))
+	if (default_cfg['algorithm'].get('name') is not None):
+		assert algo.upper() == default_cfg['algorithm']['name'], 'default config file is for a different algorithm'
 	sweep_cfg = YAML().load(open(sweep_cfg_abs_path, 'r'))
 	
 	# create save directory
-	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, 'sweeps')
+	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, algo.upper(), 'sweeps')
 	if (not os.path.isdir(save_dir)):
 		os.mkdir(save_dir)
 	# find the current sweep number
@@ -312,17 +320,18 @@ def main():
 	# copy sweep cfg files
 	if (new_sweep):
 		copyfile(default_cfg_abs_path, os.path.join(sweep_dir, 'cfg.yaml'))
+		copyfile(class_file_abs_path, os.path.join(sweep_dir, env_name + '.py'))
 		copyfile(sweep_cfg_abs_path, os.path.join(sweep_dir, 'sweep_cfg.yaml'))
 
 	# run trials
-	study_name = env_name + "_sweep_" + str(sweep_number)
+	study_name = env_name + "_" + algo + "_sweep_" + str(sweep_number)
 	wandb.login()
 	wandb_kwargs = {"project": study_name, "name": study_name}
 	wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)
 
 	@wandbc.track_in_wandb()
 	def _run_trial(tr):
-		value = run_trial(tr, default_cfg=default_cfg, sweep_cfg=sweep_cfg, save_dir=sweep_dir)
+		value = run_trial(tr, default_cfg=deepcopy(default_cfg), sweep_cfg=deepcopy(sweep_cfg), save_dir=sweep_dir)
 		wandb.log({"value": value})
 		return value
 

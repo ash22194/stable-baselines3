@@ -3,19 +3,21 @@ environment:
   num_envs: 1
   environment_kwargs:
     normalized_actions: True
+    normalized_observations: True
     fixed_start: False
-    expand_limits: True
 
 algorithm:
   name: 'PPO'
-  total_timesteps: 10000000
+  total_timesteps: 20000000
+  save_every_timestep: 10000000
   algorithm_kwargs:
-    gamma: 0.997
-    gae_lambda: 0.95
+    gamma: 0.999
+    gae_lambda: 0.99
     vf_coef: 0.5
     max_grad_norm: 0.5
     learning_rate: 0.0003
-    learning_rate_schedule: null
+    learning_rate_schedule: 
+      type: 'lin'
     n_steps: 128
     n_epochs: 1
     batch_size: 128
@@ -28,6 +30,6 @@ policy:
       pi: [256, 256]
       vf: [256, 256]
     activation_fn: 'relu'
-    optimizer_class: 'rmsproptflike'
-    log_std_init: -2.3
+    optimizer_class: 'rmsprop'
+    log_std_init: 0.07
     ortho_init: True

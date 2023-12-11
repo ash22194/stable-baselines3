@@ -4,12 +4,13 @@ import os
 import argparse
 from shutil import copyfile
 from ruamel.yaml import YAML
+from cProfile import Profile
 
 import gymnasium as gym
 import numpy as np
 from typing import Callable, Dict
 
-from stable_baselines3 import A2CwReg, PPO
+from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.callbacks import CustomSaveLogCallback
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
@@ -17,8 +18,9 @@ from stable_baselines3.common.learning_schedules import linear_schedule, decay_s
 from stable_baselines3.common.utils import configure_logger
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
 
-def initialize_model(config_file_path: str, save_dir: str, run: int = None):
+def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: int = None):
 	
+	algorithm = algorithm.upper()
 	if (run is not None):
 		# load from a previous run
 		run_path = os.path.join(save_dir, algorithm, 'tb_log', algorithm + '_', str(run))
@@ -75,7 +77,9 @@ def initialize_model(config_file_path: str, save_dir: str, run: int = None):
 			learning_rate = decay_sawtooth_schedule(learning_rate, learning_rate_schedule['sawtooth_width'])
 		algorithm_args['algorithm_kwargs']['learning_rate'] = learning_rate
 
-	algorithm = algorithm_args.get('name')
+	if (algorithm_args.get('name') is not None):
+		assert algorithm == algorithm_args.get('name').upper(), 'config file is for %s but requested %s' %(algorithm_args.get('name').upper(), algorithm)
+
 	model_uninitialized = True
 	if (run is not None):
 		# load a model if it exists
@@ -97,6 +101,8 @@ def initialize_model(config_file_path: str, save_dir: str, run: int = None):
 				model = A2CwReg.load(os.path.join(save_path, model_save_prefix + '_' + str(save_timestep)))
 			elif (algorithm == 'PPO'):
 				model = PPO.load(os.path.join(save_path, model_save_prefix + '_' + str(save_timestep)))
+			elif (algorithm == 'TD3'):
+				model = TD3.load(os.path.join(save_path, model_save_prefix + '_' + str(save_timestep)))
 			model.set_env(env)
 			model_uninitialized = False
 
@@ -106,12 +112,14 @@ def initialize_model(config_file_path: str, save_dir: str, run: int = None):
 			model = A2CwReg('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 		elif (algorithm == 'PPO'):
 			model = PPO('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
+		elif (algorithm == 'TD3'):
+			model = TD3('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 
 		log_path = os.path.join(save_dir, algorithm, 'tb_log')
 		logger = configure_logger(verbose=1, tensorboard_log=log_path, tb_log_name=algorithm, reset_num_timesteps=True)
 		# copy config file 
 		copyfile(config_file_path, os.path.join(logger.get_dir(), 'cfg.yaml'))
-		env_name = os.path.basename(os.path.dirname(config_file_path))
+		env_name = os.path.basename(os.path.dirname(os.path.dirname(config_file_path)))
 		class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/systems', env_name + '.py')
 		copyfile(class_file_abs_path, os.path.join(logger.get_dir(), env_name + '.py'))
 		model.set_logger(logger)
@@ -127,29 +135,42 @@ def main():
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--env_name', type=str, default='linearsystem', help='environment name')
+	parser.add_argument('--algorithm', type=str, default='ppo', help='algorithm to train')
 	parser.add_argument('--run', type=int, default=None, help='run number')
+	parser.add_argument('--profile', default=False, action='store_true', help='profile this run?')
 	args = parser.parse_args()
 	env_name = args.env_name
+	algo = args.algorithm.lower()
 	run_id = args.run
+	profile_run = args.profile
 
-	cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, 'sweep_optimized_cfg.yaml')
+	cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, algo, 'sweep_optimized_cfg.yaml')
 	if (not os.path.isfile(cfg_abs_path)):
-		cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, 'cfg.yaml')
+		cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, algo, 'cfg.yaml')
 	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name)
 
-	model, callback, cfg = initialize_model(cfg_abs_path, save_dir, run_id)
+	model, callback, cfg = initialize_model(cfg_abs_path, algo, save_dir, run_id)
 
 	# train the model
 	total_timesteps = cfg['algorithm']['total_timesteps']
 	model_load = model.num_timesteps > 0
 	log_interval = 1 # number of steps after which logging happens = (num_envs*n_steps_to_update)*log_interval
 	if ((total_timesteps-model.num_timesteps) > 0):
+		if (profile_run):
+			prof = Profile()
+			prof.enable()
+
 		model.learn(
 			total_timesteps=total_timesteps-model.num_timesteps,
 			log_interval=log_interval,
 			callback=callback,
 			reset_num_timesteps=(not model_load)
 		)
+
+		if (profile_run):
+			prof.disable()
+			prof.create_stats()
+			prof.dump_stats(os.path.join(model.logger.dir, 'run_profile'))
 
 	# evaluate the model
 	test_env = gym.make(cfg['environment']['name'], **cfg['environment'].get('environment_kwargs', dict()))
