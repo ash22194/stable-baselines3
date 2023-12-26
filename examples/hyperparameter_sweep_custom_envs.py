@@ -20,6 +20,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
 
 import optuna
+from optuna.storages import JournalStorage, JournalFileStorage
 from optuna.samplers import TPESampler
 from optuna.pruners import MedianPruner
 from optuna.integration.wandb import WeightsAndBiasesCallback
@@ -73,7 +74,8 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 				raise KeyError('invalid hyper-parameter %s defined in sweep' % k)
 
 	# make sure the batch_size is an integer fraction of num_envs * n_steps
-	cfg['algorithm']['algorithm_kwargs']['batch_size'] = cfg['environment']['num_envs'] * cfg['algorithm']['algorithm_kwargs']['n_steps']
+	if (cfg['algorithm']['name'].upper() == 'PPO'):
+		cfg['algorithm']['algorithm_kwargs']['batch_size'] = cfg['environment']['num_envs'] * cfg['algorithm']['algorithm_kwargs']['n_steps']
 
 	# save the sampled cfg
 	trial_save_dir = os.path.join(save_dir, 'trial_' + str(trial.number))
@@ -182,7 +184,7 @@ def initialize_model(cfg: Dict, save_dir: str):
 	elif (algorithm == 'PPO'):
 		model = PPO('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 	elif (algorithm == 'TD3'):
-		model = TD3('TD3Policy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
+		model = TD3('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 	logger = configure(folder=save_dir, format_strings=["tensorboard"])
 	model.set_logger(logger)
 
@@ -315,13 +317,18 @@ def main():
 		sweep_number = sweep_count + 1
 	sweep_dir = os.path.join(save_dir, 'sweep_' + str(sweep_number))
 	if (not os.path.isdir(sweep_dir)):
+		print('Creating sweep directory')
 		os.mkdir(sweep_dir)
+	print('Sweep directory :', sweep_dir)
 
 	# copy sweep cfg files
 	if (new_sweep):
 		copyfile(default_cfg_abs_path, os.path.join(sweep_dir, 'cfg.yaml'))
 		copyfile(class_file_abs_path, os.path.join(sweep_dir, env_name + '.py'))
 		copyfile(sweep_cfg_abs_path, os.path.join(sweep_dir, 'sweep_cfg.yaml'))
+
+	# create storage
+	sweep_storage = JournalStorage(JournalFileStorage(os.path.join(sweep_dir, "sweep_journal.log")))
 
 	# run trials
 	study_name = env_name + "_" + algo + "_sweep_" + str(sweep_number)
@@ -340,7 +347,7 @@ def main():
 		direction="maximize",
 		sampler=TPESampler(),
 		pruner=MedianPruner(n_startup_trials=num_trials, n_warmup_steps=1),
-		storage="sqlite:///" + os.path.join(sweep_dir, 'sweep.db'),
+		storage=sweep_storage,
 		load_if_exists=True
 	)
 	study.optimize(_run_trial, n_trials=num_trials, n_jobs=1, callbacks=[wandbc])
