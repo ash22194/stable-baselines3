@@ -14,6 +14,7 @@ from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.callbacks import CustomSaveLogCallback
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.learning_schedules import linear_schedule, decay_sawtooth_schedule, exponential_schedule
 from stable_baselines3.common.utils import configure_logger
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
@@ -33,6 +34,12 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 	policy_args = cfg['policy']
 	if ('policy_kwargs' not in policy_args.keys()):
 		policy_args['policy_kwargs'] = dict()
+
+	environment_args = cfg['environment']
+
+	algorithm_args = cfg['algorithm']
+	if ('algorithm_kwargs' not in algorithm_args.keys()):
+		algorithm_args['algorithm_kwargs'] = dict()
 
 	if ('activation_fn' in policy_args['policy_kwargs'].keys()):
 		if (policy_args['policy_kwargs']['activation_fn'] == 'relu'):
@@ -56,15 +63,23 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 			policy_args['policy_kwargs']['optimizer_kwargs'] = None
 
 	# initialize the environment
-	environment_args = cfg['environment']
+	normalized_rewards = environment_args.get('normalized_rewards')
 	num_envs = environment_args.get('num_envs')
-	env = make_vec_env(environment_args.get('name'), n_envs=num_envs, env_kwargs=environment_args.get('environment_kwargs', dict()))
+	env = make_vec_env(
+		environment_args.get('name'), n_envs=num_envs, 
+		env_kwargs=environment_args.get('environment_kwargs', dict()),
+		vec_env_cls=DummyVecEnv
+	)
+	if (normalized_rewards):
+		env = VecNormalize(
+			env,
+			norm_obs=False,
+			norm_reward=True,
+			training=True,
+			gamma=algorithm_args['algorithm_kwargs'].get('gamma', 0.99)
+		)
 
 	# initialize the agent
-	algorithm_args = cfg['algorithm']
-	if ('algorithm_kwargs' not in algorithm_args.keys()):
-		algorithm_args['algorithm_kwargs'] = dict()
-	
 	learning_rate_schedule = algorithm_args['algorithm_kwargs'].pop('learning_rate_schedule', None)
 	if (learning_rate_schedule is not None):
 		learning_rate = algorithm_args['algorithm_kwargs'].pop('learning_rate', None)
