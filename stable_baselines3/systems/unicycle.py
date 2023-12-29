@@ -118,7 +118,7 @@ class Unicycle(gym.Env):
 			terminal_cost = self._get_terminal_cost() # terminal cost
 			reward -= terminal_cost
 			info = {
-				'ep_terminal_goal_dist': np.linalg.norm((self.state - self.goal[:,0])[self.cost_dims]),
+				'ep_terminal_goal_dist': self.get_goal_dist(),
 				'ep_terminal_cost': terminal_cost,
 				'step_count' : deepcopy(self.step_count)
 			}
@@ -158,6 +158,9 @@ class Unicycle(gym.Env):
 			obs = (obs - obs_bounds_mid) / obs_bounds_range
 
 		return np.float32(obs)
+	
+	def get_goal_dist(self):
+		return np.linalg.norm((self.state - self.goal[:,0])[self.cost_dims])
 	
 	def _get_cost(self, action, state_):
 		if (self.nonlinear_cost):
