@@ -14,6 +14,7 @@ from typing import Callable, Dict
 from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.learning_schedules import linear_schedule, decay_sawtooth_schedule, exponential_schedule
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.callbacks import BaseCallback
@@ -133,6 +134,12 @@ def initialize_model(cfg: Dict, save_dir: str):
 	if ('policy_kwargs' not in policy_args.keys()):
 		policy_args['policy_kwargs'] = dict()
 
+	environment_args = deepcopy(cfg['environment'])
+
+	algorithm_args = deepcopy(cfg['algorithm'])
+	if ('algorithm_kwargs' not in algorithm_args.keys()):
+		algorithm_args['algorithm_kwargs'] = dict()
+
 	if ('activation_fn' in policy_args['policy_kwargs'].keys()):
 		if (policy_args['policy_kwargs']['activation_fn'] == 'relu'):
 			policy_args['policy_kwargs']['activation_fn'] = nn.ReLU
@@ -155,15 +162,23 @@ def initialize_model(cfg: Dict, save_dir: str):
 			policy_args['policy_kwargs']['optimizer_kwargs'] = None
 
 	# initialize the environment
-	environment_args = deepcopy(cfg['environment'])
+	normalized_rewards = environment_args.get('normalized_rewards', False)
 	num_envs = environment_args.get('num_envs')
-	env = make_vec_env(environment_args.get('name'), num_envs, env_kwargs=environment_args.get('environment_kwargs', dict()))
+	env = make_vec_env(
+		environment_args.get('name'), n_envs=num_envs, 
+		env_kwargs=environment_args.get('environment_kwargs', dict()),
+		vec_env_cls=DummyVecEnv
+	)
+	if (normalized_rewards):
+		env = VecNormalize(
+			env,
+			norm_obs=False,
+			norm_reward=True,
+			training=True,
+			gamma=algorithm_args['algorithm_kwargs'].get('gamma', 0.99)
+		)
 
 	# initialize the agent
-	algorithm_args = deepcopy(cfg['algorithm'])
-	if ('algorithm_kwargs' not in algorithm_args.keys()):
-		algorithm_args['algorithm_kwargs'] = dict()
-	
 	learning_rate_schedule = algorithm_args['algorithm_kwargs'].pop('learning_rate_schedule', None)
 	if (learning_rate_schedule is not None):
 		# assert type(learning_rate_schedule) is Dict, 'learning rate schedule must be a dict, found it to be of type %s' % type(learning_rate_schedule).__name__
@@ -207,8 +222,7 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int):
 			ep_discounted_reward[ee] += (discount*reward)
 			discount *= model.gamma
 
-		obs = test_env.get_obs(normalized=False)
-		final_err[ee] = np.linalg.norm(obs.reshape(-1) - test_env.goal.reshape(-1))
+		final_err[ee] = test_env.get_goal_dist()
 
 	return ep_reward, ep_discounted_reward, final_err
 
