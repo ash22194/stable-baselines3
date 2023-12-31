@@ -9,18 +9,31 @@ class Quadcopter(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, sys=dict(), fixed_start=False, normalized_actions=True, normalized_observations=False):
+	def __init__(
+		self, sys=dict(), fixed_start=False, normalized_actions=True, normalized_observations=True, 
+		az=1.22, ar=0., ap=0., aya=1.22, avxy=1.22, avz=0.0122, avrp=0.122, avya=0.0122,
+		au=1.22, aterm=1.989, tfinal=3
+	):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
 		m = 0.5
 		g = 9.81
 		sys_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
-				'Q': np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': np.diag([0.002, 0.01, 0.01, 0.004]),\
+				# 'Q': np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': np.diag([0.002, 0.01, 0.01, 0.004]),\
+				# 'Q': 0.85*np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': 0.085*np.diag([0.002, 0.001, 0.001, 0.004]),\
+				'Q': np.diag([az, ar, ap, aya, avxy, avxy, avz, avrp, avrp, avya]), 'R': au*0.02*np.diag([0.002, 0.001, 0.001, 0.004]),\
+				'QT': aterm*np.eye(10),\
+				# 'QT': 1.989*np.diag([1, 0., 0., 0, 1, 1, 1, 0, 0, 1]),\
+				# 'QT': np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]),\
 				'goal': np.array([[1.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.]]), 'u0': np.array([[m*g], [0.], [0.], [0.]]),\
-				'T': 4, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,\
-				'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-5., 5.], [-5., 5.], [-5., 5.], [-3., 3.], [-3., 3.], [-3., 3.]]),\
-				'x_bounds': np.array([[-10., 10.], [-10., 10.], [0., 2.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-10., 10.], [-10., 10.], [-10., 10.], [-7., 7.], [-7., 7.], [-7., 7.]]),\
-				'u_limits': np.array([[0, 2*m*g], [-0.25*m*g, 0.25*m*g], [-0.25*m*g, 0.25*m*g], [-0.125*m*g, 0.125*m*g]])}
+				'T': tfinal, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,\
+				'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.]]),\
+				'x_bounds': np.array([[-10., 10.], [-10., 10.], [0., 2.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.]]),\
+				# 'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-3., 3.], [-3., 3.], [-3., 3.], [-2., 2.], [-2., 2.], [-2., 2.]]),\
+				# 'x_bounds': np.array([[-10., 10.], [-10., 10.], [-4., 6.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-10., 10.], [-10., 10.], [-10., 10.], [-7., 7.], [-7., 7.], [-7., 7.]]),\
+				# 'u_limits': np.array([[0, 2*m*g], [-0.25*m*g, 0.25*m*g], [-0.25*m*g, 0.25*m*g], [-0.125*m*g, 0.125*m*g]])
+				'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.175*m*g, 0.175*m*g]])
+				}
 		sys_.update(sys)
 		sys_['gamma_'] = np.exp(-sys_['lambda_']*sys_['dt'])
 		sys.update(sys_)
@@ -38,6 +51,9 @@ class Quadcopter(gym.Env):
 		self.x_bounds = sys['x_bounds']
 		self.u_limits = sys['u_limits']
 		self.Q = sys['Q']
+		self.QT = sys['QT']
+		if (not terminal_cost):
+			self.QT *= 0
 		self.R = sys['R']
 		self.gamma_ = sys['gamma_']
 		self.lambda_ = sys['lambda_']
@@ -82,10 +98,16 @@ class Quadcopter(gym.Env):
 
 		if ((self.step_count >= self.horizon) or reached_goal):
 			done = True
-			info = {'terminal_state': deepcopy(self.state), 'step_count' : deepcopy(self.step_count)}
+			terminal_cost = self._get_terminal_cost() # terminal cost
+			reward -= terminal_cost
+			info = {
+				'ep_terminal_goal_dist': np.linalg.norm(self.state[self.observation_dims] - self.goal[:,0]),
+				'ep_terminal_cost': terminal_cost,
+				'step_count' : deepcopy(self.step_count)
+			}
 		else:
 			done = False
-			info = {'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)}
+			info = {'step_count' : deepcopy(self.step_count)}
 
 		return self.get_obs(), reward, done, False, info
 
@@ -101,7 +123,7 @@ class Quadcopter(gym.Env):
 			self.state = state
 
 		self.step_count = 0
-		info = {'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)}
+		info = {'step_count' : deepcopy(self.step_count)}
 
 		return self.get_obs(), info
 
@@ -111,7 +133,10 @@ class Quadcopter(gym.Env):
 			obs_bounds_mid = 0.5*(self.x_bounds[self.observation_dims,1] + self.x_bounds[self.observation_dims,0])
 			obs_bounds_range = 0.5*(self.x_bounds[self.observation_dims,1] - self.x_bounds[self.observation_dims,0])
 			obs = (obs - obs_bounds_mid) / obs_bounds_range
-
+			
+			target_obs_mid = 0.5*(self.observation_space.high + self.observation_space.low)
+			target_obs_range = 0.5*(self.observation_space.high - self.observation_space.low)
+			obs = target_obs_range*obs + target_obs_mid
 		return np.float32(obs)
 
 	def _get_cost(self, action, state_):
@@ -120,11 +145,20 @@ class Quadcopter(gym.Env):
 		a = action[:,np.newaxis]
 
 		cost = np.sum((x - self.goal) * (self.Q @ (x - self.goal))) + np.sum((a - self.u0) * (self.R @ (a - self.u0)))
+		# cost = -(np.sum(self.Q @ np.exp(-((x - self.goal)**2))) + np.sum(self.R @ np.exp(-((a - self.u0)**2))))
 		cost = cost * self.dt
 
 		reached_goal = np.linalg.norm(state_[self.observation_dims] - self.goal[:,0]) <= 1e-2	
 
 		return cost, reached_goal
+	
+	def _get_terminal_cost(self):
+		x = self.get_obs(normalized=False)
+		x = x[:,np.newaxis]
+
+		cost = np.sum((x - self.goal) * (self.QT @ (x - self.goal)))
+
+		return cost
 
 	def dyn_rk4(self, x, u, dt):
 		k1 = self.dyn_full(x, u)
@@ -143,6 +177,66 @@ class Quadcopter(gym.Env):
 		return q
 	
 	def dyn_full(self, x, u):
+
+		m = self.m
+		l = self.l
+		g = self.g
+		bk = self.bk
+		II = self.I
+		I1 = II[0,0]
+		I2 = II[1,1]
+		I3 = II[2,2]
+
+		x2 = x[3,0]
+		x3 = x[4,0]
+		x4 = x[5,0]
+		x7 = x[8,0]
+		x8 = x[9,0]
+		x9 = x[10,0]
+		x10 = x[11,0]
+
+		u1 = u[0,0]
+		u2 = u[1,0]
+		u3 = u[2,0]
+		u4 = u[3,0]
+
+		t2 = np.cos(x2)
+		t3 = np.cos(x3)
+		t4 = np.cos(x4)
+		t5 = np.sin(x2)
+		t6 = np.sin(x3)
+		t7 = np.sin(x4)
+		t8 = I1**2
+		t9 = I2**2
+		t10 = I3**2
+		t11 = x2*2.0
+		t12 = x3*2.0
+		t13 = x9**2
+		t14 = x10**2
+		t20 = 1.0/I2
+		t21 = 1.0/I3
+		t22 = 1.0/m
+		t15 = t2**2
+		t16 = t3**2
+		t17 = t3**3
+		t18 = np.sin(t11)
+		t19 = np.sin(t12)
+		t23 = 1.0/t3
+		et1 = I1*t10*x9*x10-I3*t8*x9*x10+I1*I2*I3*x9*x10+I2*I3*l*t3*u2-I1*t6*t10*x8*x9+I3*t6*t8*x8*x9+I1*t9*t15*x9*x10-I2*t8*t15*x9*x10-I1*t10*t15*x9*x10+I3*t8*t15*x9*x10-I1*t10*t16*x9*x10+I3*t8*t16*x9*x10+I2*t10*t16*x9*x10-I3*t9*t16*x9*x10+I1*I2*I3*t6*x8*x9+I1*I2*bk*t2*t6*u4+I1*I3*l*t5*t6*u3+I1*t2*t3*t5*t9*t14-I2*t2*t3*t5*t8*t14-I1*t2*t3*t5*t10*t14+I2*t2*t3*t5*t10*t13+I3*t2*t3*t5*t8*t14-I3*t2*t3*t5*t9*t13-I1*t2*t5*t9*t14*t17+I2*t2*t5*t8*t14*t17+I1*t2*t5*t10*t14*t17-I3*t2*t5*t8*t14*t17
+		et2 = -I2*t2*t5*t10*t14*t17+I3*t2*t5*t9*t14*t17-I1*t6*t9*t15*x8*x9+I2*t6*t8*t15*x8*x9+I1*t6*t10*t15*x8*x9-I3*t6*t8*t15*x8*x9-I1*t9*t15*t16*x9*x10+I2*t8*t15*t16*x9*x10+I1*t10*t15*t16*x9*x10-I3*t8*t15*t16*x9*x10-I2*t10*t15*t16*x9*x10*2.0+I3*t9*t15*t16*x9*x10*2.0-I1*t2*t3*t5*t6*t9*x8*x10+I2*t2*t3*t5*t6*t8*x8*x10+I1*t2*t3*t5*t6*t10*x8*x10-I3*t2*t3*t5*t6*t8*x8*x10
+
+		dx = np.zeros((self.X_DIMS, 1))
+		dx[0:6,:] = x[6:12,:]
+		dx[6,0] = t22*u1*(t5*t7+t2*t4*t6)
+		dx[7,0] = -t22*u1*(t4*t5-t2*t6*t7)
+		dx[8,0] = -g+t2*t3*t22*u1
+		dx[9,0] = (t20*t21*t23*(et1+et2))/I1
+		dx[10,0] = t20*t21*(t9*t14*t19-t3*t9*x8*x10*2.0-t9*t18*x8*x9+t10*t18*x8*x9-I1*I2*t14*t19+I2*bk*t5*u4*2.0-I3*l*t2*u3*2.0+I1*I2*t3*x8*x10*2.0+I2*I3*t3*x8*x10*2.0+I1*I2*t18*x8*x9-I1*I3*t18*x8*x9-t3*t6*t9*t14*t15*2.0+t3*t6*t10*t14*t15*2.0+t3*t9*t15*x8*x10*2.0-t3*t10*t15*x8*x10*2.0+t2*t5*t6*t9*x9*x10*2.0-t2*t5*t6*t10*x9*x10*2.0+I1*I2*t3*t6*t14*t15*2.0-I1*I3*t3*t6*t14*t15*2.0-I1*I2*t3*t15*x8*x10*2.0+I1*I3*t3*t15*x8*x10*2.0-I1*I2*t2*t5*t6*x9*x10*2.0+I1*I3*t2*t5*t6*x9*x10*2.0)*(-1.0/2.0)
+		dx[11,0] = t20*t21*t23*(-t10*x8*x9+t6*t10*x9*x10-t9*t15*x8*x9+t10*t15*x8*x9+I1*I3*x8*x9+I2*I3*x8*x9+I2*bk*t2*u4+I3*l*t5*u3-I1*I3*t6*x9*x10+I2*I3*t6*x9*x10+I1*I2*t15*x8*x9-I1*I3*t15*x8*x9+t6*t9*t15*x9*x10-t6*t10*t15*x9*x10+t2*t3*t5*t6*t9*t14-t2*t3*t5*t6*t10*t14-t2*t3*t5*t9*x8*x10+t2*t3*t5*t10*x8*x10-I1*I2*t6*t15*x9*x10+I1*I3*t6*t15*x9*x10-I1*I2*t2*t3*t5*t6*t14+I1*I3*t2*t3*t5*t6*t14+I1*I2*t2*t3*t5*x8*x10-I1*I3*t2*t3*t5*x8*x10)
+
+		return dx
+
+	def dyn_full_backup(self, x, u):
 
 		m = self.m
 		l = self.l
