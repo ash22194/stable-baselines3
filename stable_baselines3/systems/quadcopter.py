@@ -93,7 +93,7 @@ class Quadcopter(gym.Env):
 			terminal_cost = self._get_terminal_cost() # terminal cost
 			reward -= terminal_cost
 			info = {
-				'ep_terminal_goal_dist': np.linalg.norm(self.state[self.observation_dims] - self.goal[:,0]),
+				'ep_terminal_goal_dist': self.get_goal_dist(),
 				'ep_terminal_cost': terminal_cost,
 				'step_count' : deepcopy(self.step_count)
 			}
@@ -130,6 +130,9 @@ class Quadcopter(gym.Env):
 			target_obs_range = 0.5*(self.observation_space.high - self.observation_space.low)
 			obs = target_obs_range*obs + target_obs_mid
 		return np.float32(obs)
+	
+	def get_goal_dist(self):
+		return np.linalg.norm((self.state[self.observation_dims] - self.goal[:,0]))
 
 	def _get_cost(self, action, state_):
 		x = self.get_obs(normalized=False)
