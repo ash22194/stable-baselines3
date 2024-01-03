@@ -1,42 +1,55 @@
+criteria:
+  type: 'final_err'
+  num_episodes: 20
+
 environment:
   num_envs:
     type: 'int'
-    low: 3
-    high: 8
+    low: 1
+    high: 5
+  
+  alpha_cost:
+    type: 'float'
+    low: 0.1
+    high: 100
+    log: True
+  
+  alpha_action_cost:
+    type: 'float'
+    low: 0.1
+    high: 100
+    log: True
+
+  alpha_terminal_cost:
+    type: 'float'
+    low: 0.01
+    high: 10
+    log: True
 
 algorithm:
-  total_timesteps:
-    type: 'categorical'
-    choices: [15000000, 20000000]
-
-  gae_lambda: 
-    type: 'float'
-    low: 0.95
-    high: 0.99
-
   n_steps:
-    type: 'categorical'
-    choices: [320, 400, 480, 560, 640, 720]
+    type: 'int'
+    low: 64
+    high: 2048
+    log: True
+  
+  n_epochs:
+    type: 'int'
+    low: 1
+    high: 20
   
   learning_rate:
     type: 'float'
-    low: 0.0003
-    high: 0.002
+    low: 0.00002
+    high: 0.0008
   
-  learning_rate_schedule:
-    type: 'categorical'
-    choices:
-      - type: 'lin'
+  max_grad_norm:
+    type: 'float'
+    low: 0.1
+    high: 5
 
 policy:
-  net_arch:
-    type: 'categorical'
-    choices:
-      - pi: [128, 128, 128]
-        vf: [128, 128, 128]
-      - pi: [256, 256, 256]
-        vf: [256, 256, 256]
-  
-  optimizer_class:
-    type: 'categorical'
-    choices: ['rmsprop']
+  log_std_init:
+    type: 'float'
+    low: -2
+    high: 0.2

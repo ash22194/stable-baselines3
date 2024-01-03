@@ -40,6 +40,7 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 	algorithm_args = cfg['algorithm']
 	if ('algorithm_kwargs' not in algorithm_args.keys()):
 		algorithm_args['algorithm_kwargs'] = dict()
+	algorithm_args['algorithm_kwargs'].pop('device', None)
 
 	if ('activation_fn' in policy_args['policy_kwargs'].keys()):
 		if (policy_args['policy_kwargs']['activation_fn'] == 'relu'):

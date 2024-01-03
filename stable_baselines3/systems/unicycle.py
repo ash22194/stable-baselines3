@@ -1,7 +1,6 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-from copy import deepcopy
 import meshcat
 from ipdb import set_trace
 import scipy.spatial.transform as transfm
@@ -10,7 +9,7 @@ class Unicycle(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, sys=dict(), fixed_start=False, normalized_actions=True, normalized_observations=False, terminal_cost=True, nonlinear_cost=True, alpha_cost=1., alpha_terminal_cost=1.):
+	def __init__(self, sys=dict(), fixed_start=False, normalized_actions=True, normalized_observations=False, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Unicycle, self).__init__()
 		# Define model paramters
 		mw = 0.5
@@ -33,7 +32,7 @@ class Unicycle(gym.Env):
 			'alpha': -np.pi/2, 'g': 9.81, 'fcoeff': 0.0025, 'T': 2, 'dt':1e-3, 'gamma_':0.9995, 'X_DIMS': 16, 'U_DIMS': 2,\
 			'goal': goal, 'u0': np.zeros((2,1)),\
 			# 'Q': np.diag([2.5, 2.5, 1., 0.25, 0.001, 0.001, 0.05, 0.25]), 'R': (np.eye(2) / 100.),\
-			'Q': np.diag([0.1,0.1, 0.0005,0.0005, 0.,0., 0.00025, 0.0008]), 'R': (np.eye(2) / 1000.), 'QT': 2.5*np.eye(8), \
+			'Q': np.diag([0.1,0.1, 0.0005,0.0005, 0.,0., 0.00025, 0.001]), 'R': (np.eye(2) / 5000.), 'QT': 10*np.eye(8), \
 			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-1., 1.], [-1., 1.], [-1., 1.], [15., 25.], [-1., 1.]]),\
 			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/2, np.pi/2], [-np.pi/2, np.pi/2], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [5., 35.], [-8., 8.]]),\
 			'u_limits': np.array([[-15., 15.], [-15., 15.]])}
@@ -56,8 +55,6 @@ class Unicycle(gym.Env):
 		self.u_limits = sys['u_limits']
 		self.Q = sys['Q']
 		self.QT = sys['QT']
-		if (not terminal_cost):
-			self.QT *= 0
 		self.R = sys['R']
 		self.gamma_ = sys['gamma_']
 		self.lambda_ = sys['lambda_']
@@ -81,6 +78,7 @@ class Unicycle(gym.Env):
 		self.normalized_observations = normalized_observations
 		self.nonlinear_cost = nonlinear_cost
 		self.alpha_cost = alpha_cost
+		self.alpha_action_cost = alpha_action_cost
 		self.alpha_terminal_cost = alpha_terminal_cost
 		# self.reset()
 
@@ -92,19 +90,35 @@ class Unicycle(gym.Env):
 		else:
 			self.action_space = spaces.Box(low=self.u_limits[:,0], high=self.u_limits[:,1], dtype=np.float32)
 
+		state_obs_bounds_mid = 0.5*(self.x_bounds[self.observation_dims,1] + self.x_bounds[self.observation_dims,0])
+		state_obs_bounds_range = 0.5*(self.x_bounds[self.observation_dims,1] - self.x_bounds[self.observation_dims,0])
+		time_obs_bounds_mid = 0.5*self.horizon
+		time_obs_bounds_range = 0.5*self.horizon
+		self.obs_bounds_mid = np.concatenate((state_obs_bounds_mid, np.array([time_obs_bounds_mid])))
+		self.obs_bounds_range = np.concatenate((state_obs_bounds_range, np.array([time_obs_bounds_range])))			
+		
 		if (normalized_observations):
-			self.observation_space = spaces.Box(low=-1, high=1, shape=(self.observation_dims.shape[0],), dtype=np.float32)
+			self.observation_space = spaces.Box(low=-1, high=1, shape=(self.observation_dims.shape[0]+1,), dtype=np.float32)
+			self.target_obs_mid = np.zeros(self.observation_dims.shape[0]+1)
+			self.target_obs_range = np.ones(self.observation_dims.shape[0]+1)
 		else:
-			self.observation_space = spaces.Box(low=self.x_bounds[self.observation_dims,0], high=self.x_bounds[self.observation_dims,1], dtype=np.float32)
+			self.observation_space = spaces.Box(
+				low=np.concatenate((self.x_bounds[self.observation_dims,0], np.array([0.]))), 
+				high=np.concatenate((self.x_bounds[self.observation_dims,1], np.array([self.horizon]))), 
+				dtype=np.float32
+			)
+			self.target_obs_mid = self.obs_bounds_mid
+			self.target_obs_range = self.obs_bounds_range
 
 	def step(self, action):
 		# If scaling actions use this
 		if (self.normalized_actions):
 			action = 0.5*((self.u_limits[:,0] + self.u_limits[:,1]) + action*(self.u_limits[:,1] - self.u_limits[:,0]))
 
-		e_p, e_v = self._err_posvel_contact(self.state)
-		e_a = self._err_acc_contact(self.state, action)
-		info = dict(contact_info={'err_p': e_p, 'err_v': e_v, 'err_a': e_a})
+		# e_p, e_v = self._err_posvel_contact(self.state)
+		# e_a = self._err_acc_contact(self.state, action)
+		# info = dict(contact_info={'err_p': e_p, 'err_v': e_v, 'err_a': e_a})
+		info = dict()
 
 		state_ = self.dyn_rk4(self.state[:,np.newaxis], action[:,np.newaxis], self.dt)
 		state_ = self._enforce_bounds(state_[:,0])
@@ -119,14 +133,14 @@ class Unicycle(gym.Env):
 			done = True
 			terminal_cost = self._get_terminal_cost() # terminal cost
 			reward -= terminal_cost
-			info = {
+			info.update({
 				'ep_terminal_goal_dist': self.get_goal_dist(),
 				'ep_terminal_cost': terminal_cost,
-				'step_count' : deepcopy(self.step_count)
-			}
+				'step_count' : self.step_count
+			})
 		else:
 			done = False
-			info.update({'step_count' : deepcopy(self.step_count)})
+			info.update({'step_count' : self.step_count})
 
 		return self.get_obs(), reward, done, False, info
 
@@ -148,17 +162,17 @@ class Unicycle(gym.Env):
 
 		self.step_count = 0
 		info = dict(contact_info={'err_p':np.zeros(3), 'err_v':np.zeros(3), 'err_a':np.zeros(3)})
-		info.update({'terminal_state': np.array([]), 'step_count' : deepcopy(self.step_count)})
+		info.update({'terminal_state': np.array([]), 'step_count' : self.step_count})
 
 		return self.get_obs(), info
 
 	def get_obs(self, normalized=None):
-		obs = self.state[self.observation_dims]
+		obs = np.zeros(self.observation_dims.shape[0]+1)
+		obs[:self.observation_dims.shape[0]] = self.state[self.observation_dims]
+		obs[-1] = self.step_count
 		if ((normalized == None) and self.normalized_observations) or (normalized == True):
-			obs_bounds_mid = 0.5*(self.x_bounds[self.observation_dims,1] + self.x_bounds[self.observation_dims,0])
-			obs_bounds_range = 0.5*(self.x_bounds[self.observation_dims,1] - self.x_bounds[self.observation_dims,0])
-			obs = (obs - obs_bounds_mid) / obs_bounds_range
-
+			obs = (obs - self.obs_bounds_mid) / self.obs_bounds_range
+			obs = self.target_obs_range*obs + self.target_obs_mid
 		return np.float32(obs)
 	
 	def get_goal_dist(self):
@@ -166,15 +180,15 @@ class Unicycle(gym.Env):
 	
 	def _get_cost(self, action, state_):
 		if (self.nonlinear_cost):
-			y = self._get_taskspace_obs()
+			y = self.get_taskspace_obs()
 		else:
 			y = (self.state - self.goal[:,0])[self.cost_dims]
 
 		y = y[:,np.newaxis]
 		a = action[:,np.newaxis]
 
-		cost = np.sum(y * (self.Q @ y)) + np.sum((a - self.u0) * (self.R @ (a - self.u0)))
-		cost = cost * self.dt * self.alpha_cost
+		cost = np.sum(y * (self.Q @ y)) * self.alpha_cost + np.sum((a - self.u0) * (self.R @ (a - self.u0))) * self.alpha_action_cost
+		cost = cost * self.dt
 
 		reached_goal = np.linalg.norm((state_ - self.goal[:,0])[self.cost_dims]) <= 1e-2	
 
@@ -182,7 +196,7 @@ class Unicycle(gym.Env):
 	
 	def _get_terminal_cost(self):
 		if (self.nonlinear_cost):
-			y = self._get_taskspace_obs()
+			y = self.get_taskspace_obs()
 		else:
 			y = (self.state - self.goal[:,0])[self.cost_dims]
 
@@ -191,7 +205,7 @@ class Unicycle(gym.Env):
 
 		return cost
 	
-	def _get_taskspace_obs(self):
+	def get_taskspace_obs(self):
 		x = self.state
 
 		# calculate com position and velocity
@@ -200,19 +214,21 @@ class Unicycle(gym.Env):
 		p_dumbell = Rframe @ np.array([0.,0.,self.rd])
 
 		p_com = (self.mw*p_wheel + self.md*p_dumbell) / (self.mf + self.mw + self.md)
-		v_com = self._jacobian_com(x[3:8]) @ x[8:16]
+		v_com = self._jacobian_com(x) @ x[8:16]
 
 		Rwheel = transfm.Rotation.from_euler('yxz', [x[5]+x[6], x[4], x[3]]).as_matrix()
 		p_con = p_wheel + Rwheel @ np.array([self.rw*np.sin(x[5]+x[6]), 0., -self.rw*np.cos(x[5]+x[6])])
-		v_con = self._jacobian_contact_trace(x[3:8]) @ x[8:16]
+		v_con = self._jacobian_contact_trace(x) @ x[8:16]
 
-		y = np.concatenate((
-			p_com[:2] - p_con[:2], 
-			v_com[:2] - v_con[:2], 
-			x[7:8] - self.goal[3,:],
-			x[15:16] - self.goal[8,:],
-			x[11:12] - self.goal[4,:],
-			x[14:15] - self.goal[7,:]))
+		y = np.zeros(8)
+		y[0] = p_com[0] - p_con[0]
+		y[1] = p_com[1] - p_con[1]
+		y[2] = v_com[0] - v_con[0]
+		y[3] = v_com[1] - v_con[1]
+		y[4] = x[7] - self.goal[7,0]
+		y[5] = x[15] - self.goal[15,0]
+		y[6] = x[11] - self.goal[11,0]
+		y[7] = x[14] - self.goal[14,0]
 
 		return y
 
@@ -2518,49 +2534,69 @@ class Unicycle(gym.Env):
 
 		return dx
 	
-	def _jacobian_contact(self, angles):
+	def _jacobian_contact(self, x):
 		# angles - [base_yaw, base_roll, base_pitch, wheel_pitch, dumbell_yaw]
 		rw = self.rw
 		rf = self.rf
-		ph = angles[0]
-		th = angles[1]
-		om = angles[2]
-		ps = angles[3] + om
-		ne = angles[4]
+		ph = x[3]
+		th = x[4]
+		om = x[5]
+		ps = x[6] + om
+		ne = x[7]
 
 		J = np.zeros((3, 8))
-		J[:, :3] = np.eye(3)
-		J[0, 3:8] = np.array([-(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)) + rf*np.sin(ph)*np.sin(om), -(np.cos(th)*(rw + rf*np.cos(om))*np.sin(ph)), -(rf*np.cos(ph)*np.cos(om)) + rf*np.sin(th)*np.sin(ph)*np.sin(om), -(rw*np.cos(ph)), 0.])
-		J[1, 3:8] = np.array([-((rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)) - rf*np.cos(ph)*np.sin(om), np.cos(th)*np.cos(ph)*(rw + rf*np.cos(om)), -(rf*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om))), -(rw*np.sin(ph)), 0.])
-		J[2, 3:8] = np.array([0., (rw + rf*np.cos(om))*np.sin(th), rf*np.cos(th)*np.sin(om), 0., 0.])
-		
+		J[0,0] = 1.
+		J[0,3] = -(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)) + rf*np.sin(ph)*np.sin(om)
+		J[0,4] = -(np.cos(th)*(rw + rf*np.cos(om))*np.sin(ph))
+		J[0,5] = -(rf*np.cos(ph)*np.cos(om)) + rf*np.sin(th)*np.sin(ph)*np.sin(om)
+		J[0,6] = -(rw*np.cos(ph))
+
+		J[1,1] = 1.
+		J[1,3] = -((rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)) - rf*np.cos(ph)*np.sin(om)
+		J[1,4] = np.cos(th)*np.cos(ph)*(rw + rf*np.cos(om))
+		J[1,5] = -(rf*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om)))
+		J[1,6] = -(rw*np.sin(ph))
+
+		J[2,2] = 1.
+		J[2,4] = (rw + rf*np.cos(om))*np.sin(th)
+		J[2,5] = rf*np.cos(th)*np.sin(om)
+
 		# v = ... + J[:,5] * v_om + J[:,6] * (v_ps + v_om)
 		# v = ... + (J[:,5] + J[:,6]) * v_om + J[:,6] * v_ps
 		J[:, 5] += J[:, 6]
 
 		return J
 	
-	def _jacobian_contact_trace(self, angles):
+	def _jacobian_contact_trace(self, x):
 		
 		rw = self.rw
 		rf = self.rf
-		ph = angles[0]
-		th = angles[1]
-		om = angles[2]
-		ps = angles[3] + om
-		ne = angles[4]
+		ph = x[3]
+		th = x[4]
+		om = x[5]
+		ps = x[6] + om
+		ne = x[7]
 
 		J = np.zeros((3, 8))
-		J[:, :3] = np.eye(3)
-		J[0, 3:8] = np.array([-(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)) + rf*np.sin(ph)*np.sin(om), -(np.cos(th)*(rw + rf*np.cos(om))*np.sin(ph)), -(rf*np.cos(ph)*np.cos(om)) + rf*np.sin(th)*np.sin(ph)*np.sin(om), 0, 0])
-		J[1, 3:8] = np.array([-((rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)) - rf*np.cos(ph)*np.sin(om), np.cos(th)*np.cos(ph)*(rw + rf*np.cos(om)), -(rf*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om))), 0, 0])
-		J[2, 3:8] = np.array([0, (rw + rf*np.cos(om))*np.sin(th), rf*np.cos(th)*np.sin(om), 0, 0])
+		J[0,0] = 1.
+		J[0,3] = -(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)) + rf*np.sin(ph)*np.sin(om)
+		J[0,4] = -(np.cos(th)*(rw + rf*np.cos(om))*np.sin(ph))
+		J[0,5] = -(rf*np.cos(ph)*np.cos(om)) + rf*np.sin(th)*np.sin(ph)*np.sin(om)
+		
+		J[1,1] = 1.
+		J[1,3] = -((rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)) - rf*np.cos(ph)*np.sin(om)
+		J[1,4] = np.cos(th)*np.cos(ph)*(rw + rf*np.cos(om))
+		J[1,5] = -(rf*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om)))
+
+		J[2,2] = 1.
+		J[2,4] = (rw + rf*np.cos(om))*np.sin(th)
+		J[2,5] = rf*np.cos(th)*np.sin(om)
 
 		J[:, 5] += J[:, 6]
 
 		return J
 	
-	def _jacobian_com(self, angles):
+	def _jacobian_com(self, x):
 
 		mw = self.mw
 		mf = self.mf
@@ -2570,42 +2606,50 @@ class Unicycle(gym.Env):
 		rf = self.rf
 		rd = self.rd
 
-		ph = angles[0]
-		th = angles[1]
-		om = angles[2]
-		ps = angles[3] + om
-		ne = angles[4]
+		ph = x[3]
+		th = x[4]
+		om = x[5]
+		ps = x[6] + om
+		ne = x[7]
 
 		J = np.zeros((3, 8))
-		J[:,:3] = np.eye(3)
-		J[0, 3:8] = np.array([((md*rd - mw*rf)*(np.cos(ph)*np.cos(om)*np.sin(th) - np.sin(ph)*np.sin(om)))/(md + mf + mw), ((md*rd - mw*rf)*np.cos(th)*np.cos(om)*np.sin(ph))/(md + mf + mw), ((md*rd - mw*rf)*(np.cos(ph)*np.cos(om) - np.sin(th)*np.sin(ph)*np.sin(om)))/(md + mf + mw), 0, 0])
-		J[1, 3:8] = np.array([((md*rd - mw*rf)*(np.cos(om)*np.sin(th)*np.sin(ph) + np.cos(ph)*np.sin(om)))/(md + mf + mw), ((-(md*rd) + mw*rf)*np.cos(th)*np.cos(ph)*np.cos(om))/(md + mf + mw), ((md*rd - mw*rf)*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om)))/(md + mf + mw), 0, 0])
-		J[2, 3:8] = np.array([0, ((-(md*rd) + mw*rf)*np.cos(om)*np.sin(th))/(md + mf + mw), ((-(md*rd) + mw*rf)*np.cos(th)*np.sin(om))/(md + mf + mw), 0, 0])
+		J[0,0] = 1.
+		J[0,3] = ((md*rd - mw*rf)*(np.cos(ph)*np.cos(om)*np.sin(th) - np.sin(ph)*np.sin(om)))/(md + mf + mw)
+		J[0,4] = ((md*rd - mw*rf)*np.cos(th)*np.cos(om)*np.sin(ph))/(md + mf + mw)
+		J[0,5] = ((md*rd - mw*rf)*(np.cos(ph)*np.cos(om) - np.sin(th)*np.sin(ph)*np.sin(om)))/(md + mf + mw)
+
+		J[1,1] = 1.
+		J[1,3] = ((md*rd - mw*rf)*(np.cos(om)*np.sin(th)*np.sin(ph) + np.cos(ph)*np.sin(om)))/(md + mf + mw)
+		J[1,4] = ((-(md*rd) + mw*rf)*np.cos(th)*np.cos(ph)*np.cos(om))/(md + mf + mw)
+		J[1,5] = ((md*rd - mw*rf)*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om)))/(md + mf + mw)
+
+		J[2,2] = 1.
+		J[2,4] = ((-(md*rd) + mw*rf)*np.cos(om)*np.sin(th))/(md + mf + mw)
+		J[2,5] = ((-(md*rd) + mw*rf)*np.cos(th)*np.sin(om))/(md + mf + mw)
 
 		J[:, 5] += J[:, 6]
 
 		return J
 
-	def _accdrift_contact(self, angles, d_angles):
+	def _accdrift_contact(self, x):
 
 		rw = self.rw
 		rf = self.rf
-		ph = angles[0]
-		th = angles[1]
-		om = angles[2]
-		ps = angles[3] + om
-		ne = angles[4]
-		v_ph = d_angles[0]
-		v_th = d_angles[1]
-		v_om = d_angles[2]
-		v_ps = d_angles[3] + v_om
-		v_ne = d_angles[4]
+		ph = x[3]
+		th = x[4]
+		om = x[5]
+		ps = x[6] + om
+		ne = x[7]
+		v_ph = x[11]
+		v_th = x[12]
+		v_om = x[13]
+		v_ps = x[14] + v_om
+		v_ne = x[15]
 
-		d = np.array([
-			(rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)*v_th**2 + rw*np.sin(ph)*v_ph*(np.sin(th)*v_ph + v_ps) + 2*np.cos(th)*v_th*(-(np.cos(ph)*(rw + rf*np.cos(om))*v_ph) + rf*np.sin(ph)*np.sin(om)*v_om) + rf*np.cos(ph)*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2) + rf*np.cos(om)*np.sin(ph)*(2*v_ph*v_om + np.sin(th)*(v_ph**2 + v_om**2)),
-			-(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)*v_th**2) - rw*np.cos(ph)*v_ph*(np.sin(th)*v_ph + v_ps) - 2*np.cos(th)*v_th*((rw + rf*np.cos(om))*np.sin(ph)*v_ph + rf*np.cos(ph)*np.sin(om)*v_om) + rf*np.sin(ph)*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2) - rf*np.cos(ph)*np.cos(om)*(2*v_ph*v_om + np.sin(th)*(v_ph**2 + v_om**2)),
-			np.cos(th)*(rw + rf*np.cos(om))*v_th**2 - 2*rf*np.sin(th)*np.sin(om)*v_th*v_om + rf*np.cos(th)*np.cos(om)*v_om**2
-		])
+		d = np.zeros(3)
+		d[0] = (rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)*v_th**2 + rw*np.sin(ph)*v_ph*(np.sin(th)*v_ph + v_ps) + 2*np.cos(th)*v_th*(-(np.cos(ph)*(rw + rf*np.cos(om))*v_ph) + rf*np.sin(ph)*np.sin(om)*v_om) + rf*np.cos(ph)*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2) + rf*np.cos(om)*np.sin(ph)*(2*v_ph*v_om + np.sin(th)*(v_ph**2 + v_om**2))
+		d[1] = -(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)*v_th**2) - rw*np.cos(ph)*v_ph*(np.sin(th)*v_ph + v_ps) - 2*np.cos(th)*v_th*((rw + rf*np.cos(om))*np.sin(ph)*v_ph + rf*np.cos(ph)*np.sin(om)*v_om) + rf*np.sin(ph)*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2) - rf*np.cos(ph)*np.cos(om)*(2*v_ph*v_om + np.sin(th)*(v_ph**2 + v_om**2))
+		d[2] = np.cos(th)*(rw + rf*np.cos(om))*v_th**2 - 2*rf*np.sin(th)*np.sin(om)*v_th*v_om + rf*np.cos(th)*np.cos(om)*v_om**2
 
 		return d
 	
@@ -2615,7 +2659,7 @@ class Unicycle(gym.Env):
 		Rwheel = transfm.Rotation.from_euler('yxz', [0., x[4], x[3]]).as_matrix()
 		err_p = x[:3] + Rframe @ np.array([0., 0., -self.rf]) + Rwheel @ np.array([0., 0., -self.rw])
 		err_p[:2] = 0.
-		c_J = self._jacobian_contact(x[3:8])
+		c_J = self._jacobian_contact(x)
 		err_v = c_J @ x[8:]
 
 		return err_p, err_v
@@ -2623,8 +2667,8 @@ class Unicycle(gym.Env):
 	def _err_acc_contact(self, x, u):
 
 		dx = self.dyn_full(x[:,np.newaxis], u[:,np.newaxis])
-		c_J = self._jacobian_contact(x[3:8])
-		c_d = self._accdrift_contact(x[3:8], dx[3:8,0])
+		c_J = self._jacobian_contact(x)
+		c_d = self._accdrift_contact(x)
 		err_a = c_J @ dx[8:,0] + c_d
 
 		return err_a

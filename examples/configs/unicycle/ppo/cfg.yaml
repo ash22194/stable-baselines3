@@ -1,22 +1,27 @@
 environment:
   name: 'Unicycle-v0'
   num_envs: 1
+  normalized_rewards: False
   environment_kwargs:
-    normalized_actions: True
     fixed_start: False
-    expand_limits: False
+    normalized_actions: True
+    normalized_observations: True
+    alpha_cost: 1.
+    alpha_action_cost: 1.
+    alpha_terminal_cost: 1.
 
 algorithm:
   name: 'PPO'
-  save_every_timestep: 2500000
   total_timesteps: 10000000
+  save_every_timestep: 6600000
   algorithm_kwargs:
     gamma: 0.9995
-    gae_lambda: 0.96
+    gae_lambda: 0.99
     vf_coef: 0.5
     max_grad_norm: 0.5
     learning_rate: 0.0004
-    learning_rate_schedule: null
+    learning_rate_schedule: 
+      type: 'lin'
     n_steps: 320
     n_epochs: 1
     batch_size: 320
@@ -26,8 +31,8 @@ policy:
   save_prefix: 'model'
   policy_kwargs:
     net_arch:
-      pi: [128, 128]
-      vf: [128, 128]
+      pi: [256, 256, 256]
+      vf: [256, 256, 256]
     activation_fn: 'relu'
     optimizer_class: 'rmsprop'
     log_std_init: -2.3

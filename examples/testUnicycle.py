@@ -10,6 +10,43 @@ from ipdb import set_trace
 
 from stable_baselines3.common.env_checker import check_env
 
+def compute_taskspace_jacobian(env, x):
+
+	J = np.zeros((8, env.X_DIMS))
+	eps = 1e-6
+	for idd in env.independent_dims:
+		ev = np.zeros(env.X_DIMS)
+		ev[idd] = eps
+		xp = x + ev
+		env.reset(state=xp)
+		yp = env.get_taskspace_obs()
+
+		xm = x - ev
+		env.reset(state=xm)
+		ym = env.get_taskspace_obs()
+
+		J[:, idd] = (yp - ym) / (2*eps)
+
+	return J
+
+def compute_taskspace_hessian(env, x):
+
+	H = zeros((8, env.X_DIMS, env.X_DIMS))
+	eps = 1e-6
+	for idd in env.independent_dims:
+		ev = np.zeros(env.X_DIMS)
+		ev[idd] = eps
+
+		xp = x + ev
+		Jp = compute_taskspace_jacobian(env, xp)
+
+		xm = x - ev
+		Jm = compute_taskspace_jacobian(env, xm)
+
+		H[:,:,idd] = (Jp - Jm) / (2*eps)
+
+	return H
+
 def main():
 	normalized_actions = True
 	fixed_start = True
@@ -42,11 +79,11 @@ def main():
 	print('Dyn time :', dyn_time / num_samples)
 	print('Dyn ana time :', dyn_ana_time / num_samples)
 
-	prof.create_stats()
-	prof.dump_stats('unicycle_profile')
-	goal = env.goal
-	x0 = np.zeros((env.X_DIMS, 1))
-	x0[env.observation_dims,:] = goal
+	# prof.create_stats()
+	# prof.dump_stats('unicycle_profile')
+	env.reset(state=env.goal[:,0])
+	goal = env.state[:,np.newaxis]
+	x0 = goal
 	u0 = env.u0
 	A = np.zeros((env.X_DIMS, env.X_DIMS))
 	B = np.zeros((env.X_DIMS, env.U_DIMS))
@@ -54,23 +91,21 @@ def main():
 	for xx in range(env.X_DIMS):
 		perturb = np.zeros((env.X_DIMS, 1))
 		perturb[xx, 0] = eps
-		dyn_p = env.dyn_full_ana(x0 + perturb, u0)
-		dyn_m = env.dyn_full_ana(x0 - perturb, u0)
+		dyn_p = env.dyn_full(x0 + perturb, u0)
+		dyn_m = env.dyn_full(x0 - perturb, u0)
 
 		A[:, xx:(xx+1)] = (dyn_p - dyn_m) / (2*eps)
 
 	for uu in range(env.U_DIMS):
 		perturb = np.zeros(u0.shape)
 		perturb[uu] = eps
-		dyn_p = env.dyn_full_ana(x0, u0 + perturb)
-		dyn_m = env.dyn_full_ana(x0, u0 - perturb)
+		dyn_p = env.dyn_full(x0, u0 + perturb)
+		dyn_m = env.dyn_full(x0, u0 - perturb)
 
 		B[:, uu:(uu+1)] = (dyn_p - dyn_m) / (2*eps)
-	A = A[:,env.observation_dims]
-	A = A[env.observation_dims,:]
-	B = B[env.observation_dims,:]
 
-	Q = env.Q
+	J = compute_taskspace_jacobian(env, goal[:,0])
+	Q = (J.T) @ env.Q @ J
 	R = env.R
 	lambda_ = 0.5
 	gamma_ = 0.9995
@@ -96,7 +131,7 @@ def main():
 	value = 0
 	discount = 1
 	for i in range(int(env.T / env.dt)):
-		action = np.matmul(-K, obs[:,np.newaxis] - goal)[:,0]
+		action = np.matmul(-K, env.state[:,np.newaxis] - goal)[:,0]
 		action = np.maximum(u_limits[:,0], np.minimum(u_limits[:,1], action))
 		with np.printoptions(precision=3, suppress=True):
 			print('u :', action)
@@ -104,7 +139,7 @@ def main():
 
 		if (normalized_actions):
 			action = (2*action - (u_limits[:,1] + u_limits[:,0])) / (u_limits[:,1] - u_limits[:,0])
-		
+
 		with np.printoptions(precision=3, suppress=True):
 			print('dv :', env.dyn_full(env.state[:,np.newaxis], action[:,np.newaxis])[8:,0])
 
