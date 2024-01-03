@@ -1,7 +1,6 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-from copy import deepcopy
 import meshcat
 import scipy.spatial.transform as transfm
 
@@ -68,10 +67,25 @@ class Quadcopter(gym.Env):
 		else:
 			self.action_space = spaces.Box(low=self.u_limits[:,0], high=self.u_limits[:,1], dtype=np.float32)
 
+		state_obs_bounds_mid = 0.5*(self.x_bounds[self.observation_dims,1] + self.x_bounds[self.observation_dims,0])
+		state_obs_bounds_range = 0.5*(self.x_bounds[self.observation_dims,1] - self.x_bounds[self.observation_dims,0])
+		time_obs_bounds_mid = 0.5*self.horizon
+		time_obs_bounds_range = 0.5*self.horizon
+		self.obs_bounds_mid = np.concatenate((state_obs_bounds_mid, np.array([time_obs_bounds_mid])))
+		self.obs_bounds_range = np.concatenate((state_obs_bounds_range, np.array([time_obs_bounds_range])))			
+		
 		if (normalized_observations):
-			self.observation_space = spaces.Box(low=-1, high=1, shape=(self.observation_dims.shape[0],), dtype=np.float32)
+			self.observation_space = spaces.Box(low=-1, high=1, shape=(self.observation_dims.shape[0]+1,), dtype=np.float32)
+			self.target_obs_mid = np.zeros(self.observation_dims.shape[0]+1)
+			self.target_obs_range = np.ones(self.observation_dims.shape[0]+1)
 		else:
-			self.observation_space = spaces.Box(low=self.x_bounds[self.observation_dims,0], high=self.x_bounds[self.observation_dims,1], dtype=np.float32)
+			self.observation_space = spaces.Box(
+				low=np.concatenate((self.x_bounds[self.observation_dims,0], np.array([0.]))), 
+				high=np.concatenate((self.x_bounds[self.observation_dims,1], np.array([self.horizon]))), 
+				dtype=np.float32
+			)
+			self.target_obs_mid = self.obs_bounds_mid
+			self.target_obs_range = self.obs_bounds_range
 
 	def step(self, action):
 		# If scaling actions use this
@@ -95,11 +109,11 @@ class Quadcopter(gym.Env):
 			info = {
 				'ep_terminal_goal_dist': self.get_goal_dist(),
 				'ep_terminal_cost': terminal_cost,
-				'step_count' : deepcopy(self.step_count)
+				'step_count' : self.step_count
 			}
 		else:
 			done = False
-			info = {'step_count' : deepcopy(self.step_count)}
+			info = {'step_count' : self.step_count}
 
 		return self.get_obs(), reward, done, False, info
 
@@ -115,20 +129,17 @@ class Quadcopter(gym.Env):
 			self.state = state
 
 		self.step_count = 0
-		info = {'step_count' : deepcopy(self.step_count)}
+		info = {'step_count' : self.step_count}
 
 		return self.get_obs(), info
 
 	def get_obs(self, normalized=None):
-		obs = self.state[self.observation_dims]
+		obs = np.zeros(self.observation_dims.shape[0]+1)
+		obs[:self.observation_dims.shape[0]] = self.state[self.observation_dims]
+		obs[-1] = self.step_count
 		if ((normalized == None) and self.normalized_observations) or (normalized == True):
-			obs_bounds_mid = 0.5*(self.x_bounds[self.observation_dims,1] + self.x_bounds[self.observation_dims,0])
-			obs_bounds_range = 0.5*(self.x_bounds[self.observation_dims,1] - self.x_bounds[self.observation_dims,0])
-			obs = (obs - obs_bounds_mid) / obs_bounds_range
-			
-			target_obs_mid = 0.5*(self.observation_space.high + self.observation_space.low)
-			target_obs_range = 0.5*(self.observation_space.high - self.observation_space.low)
-			obs = target_obs_range*obs + target_obs_mid
+			obs = (obs - self.obs_bounds_mid) / self.obs_bounds_range
+			obs = self.target_obs_range*obs + self.target_obs_mid
 		return np.float32(obs)
 	
 	def get_goal_dist(self):
@@ -136,7 +147,7 @@ class Quadcopter(gym.Env):
 
 	def _get_cost(self, action, state_):
 		x = self.get_obs(normalized=False)
-		x = x[:,np.newaxis]
+		x = x[:self.observation_dims.shape[0],np.newaxis]
 		a = action[:,np.newaxis]
 
 		cost = np.sum((x - self.goal) * (self.Q @ (x - self.goal))) * self.alpha_cost + np.sum((a - self.u0) * (self.R @ (a - self.u0))) * self.alpha_action_cost
@@ -148,7 +159,7 @@ class Quadcopter(gym.Env):
 	
 	def _get_terminal_cost(self):
 		x = self.get_obs(normalized=False)
-		x = x[:,np.newaxis]
+		x = x[:self.observation_dims.shape[0],np.newaxis]
 
 		cost = np.sum((x - self.goal) * (self.QT @ (x - self.goal))) * self.alpha_terminal_cost
 
