@@ -19,7 +19,7 @@ from stable_baselines3.common.learning_schedules import linear_schedule, decay_s
 from stable_baselines3.common.utils import configure_logger
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
 
-def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: int = None):
+def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: int = None, device: str = 'auto'):
 	
 	algorithm = algorithm.upper()
 	if (run is not None):
@@ -113,22 +113,22 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 
 		if (save_timestep > 0):
 			if (algorithm == 'A2C'):
-				model = A2CwReg.load(os.path.join(save_path, model_save_prefix + '_' + str(save_timestep)))
+				model = A2CwReg.load(os.path.join(save_path, model_save_prefix + '_' + str(save_timestep)), device=device)
 			elif (algorithm == 'PPO'):
-				model = PPO.load(os.path.join(save_path, model_save_prefix + '_' + str(save_timestep)))
+				model = PPO.load(os.path.join(save_path, model_save_prefix + '_' + str(save_timestep)), device=device)
 			elif (algorithm == 'TD3'):
-				model = TD3.load(os.path.join(save_path, model_save_prefix + '_' + str(save_timestep)))
+				model = TD3.load(os.path.join(save_path, model_save_prefix + '_' + str(save_timestep)), device=device)
 			model.set_env(env)
 			model_uninitialized = False
 
 	if (model_uninitialized): 
 		# new training or unsaved model from a previous run
 		if (algorithm == 'A2C'):
-			model = A2CwReg('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
+			model = A2CwReg('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'), device=device)
 		elif (algorithm == 'PPO'):
-			model = PPO('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
+			model = PPO('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'), device=device)
 		elif (algorithm == 'TD3'):
-			model = TD3('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
+			model = TD3('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'), device=device)
 
 		log_path = os.path.join(save_dir, algorithm, 'tb_log')
 		logger = configure_logger(verbose=1, tensorboard_log=log_path, tb_log_name=algorithm, reset_num_timesteps=True)
@@ -152,11 +152,13 @@ def main():
 	parser.add_argument('--env_name', type=str, default='linearsystem', help='environment name')
 	parser.add_argument('--algorithm', type=str, default='ppo', help='algorithm to train')
 	parser.add_argument('--run', type=int, default=None, help='run number')
+	parser.add_argument('--device', type=str, default='auto', help='cpu/cuda/auto')
 	parser.add_argument('--profile', default=False, action='store_true', help='profile this run?')
 	args = parser.parse_args()
 	env_name = args.env_name
 	algo = args.algorithm.lower()
 	run_id = args.run
+	device = args.device
 	profile_run = args.profile
 
 	cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, algo, 'sweep_optimized_cfg.yaml')
@@ -164,7 +166,7 @@ def main():
 		cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, algo, 'cfg.yaml')
 	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name)
 
-	model, callback, cfg = initialize_model(cfg_abs_path, algo, save_dir, run_id)
+	model, callback, cfg = initialize_model(cfg_abs_path, algo, save_dir, run_id, device)
 
 	# train the model
 	total_timesteps = cfg['algorithm']['total_timesteps']

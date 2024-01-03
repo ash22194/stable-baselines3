@@ -34,7 +34,7 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=F
 			discount *= model.gamma
 
 		end_obs = test_env.get_obs(normalized=False)
-		final_err[ee] = np.linalg.norm(end_obs.reshape(-1) - test_env.goal.reshape(-1))
+		final_err[ee] = test_env.get_goal_dist()
 
 		if (print_outcomes):
 			with np.printoptions(precision=3, suppress=True):
@@ -106,7 +106,7 @@ def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_
 		done = False
 		discount = 1
 		while (not done):
-			action = (u0 - K @ (obs - goal))
+			action = (u0 - K @ (obs[:test_env.observation_dims.shape[0]] - goal))
 			action = np.maximum(u_limits[:,0], np.minimum(u_limits[:,1], action))
 			if (normalized_actions):
 				action = (2*action - (u_limits[:,1] + u_limits[:,0])) / (u_limits[:,1] - u_limits[:,0])
@@ -120,7 +120,7 @@ def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_
 			discount *= gamma_
 
 		end_obs = test_env.get_obs(normalized=False)
-		final_err[ee] = np.linalg.norm(end_obs.reshape(-1) - test_env.goal.reshape(-1))
+		final_err[ee] = test_env.get_goal_dist()
 
 		if (print_outcomes):
 			with np.printoptions(precision=3, suppress=True):
