@@ -1,0 +1,23 @@
+criteria:
+  type: 'final_err'
+  num_episodes: 20
+
+algorithm:
+  train_freq:
+    type: 'categorical'
+    choices: [1, 10, 100, 1000]
+
+  batch_size: 
+    type: 'categorical'
+    choices: [64, 128, 256, 512]
+
+  learning_rate:
+    type: 'float'
+    low: 0.00002
+    high: 0.001
+  
+  learning_rate_schedule:
+    type: 'categorical'
+    choices:
+      - type: null
+      - type: 'lin'

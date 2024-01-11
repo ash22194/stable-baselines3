@@ -12,9 +12,10 @@ import numpy as np
 from typing import Callable, Dict
 
 from stable_baselines3 import A2CwReg, PPO, TD3
+from stable_baselines3.gpu_systems import GPUQuadcopter
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize, GPUVecEnv
 from stable_baselines3.common.learning_schedules import linear_schedule, decay_sawtooth_schedule, exponential_schedule
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.callbacks import BaseCallback
@@ -27,7 +28,7 @@ from optuna.pruners import MedianPruner
 from optuna.integration.wandb import WeightsAndBiasesCallback
 import wandb
 
-def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
+def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str, env_device: str):
 	# sample a config
 	criteria = sweep_cfg.pop('criteria', dict())
 	cfg = deepcopy(default_cfg)
@@ -74,9 +75,11 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 			else:
 				raise KeyError('invalid hyper-parameter %s defined in sweep' % k)
 
-	# make sure the batch_size is an integer fraction of num_envs * n_steps
-	if (cfg['algorithm']['name'].upper() == 'PPO'):
-		cfg['algorithm']['algorithm_kwargs']['batch_size'] = cfg['environment']['num_envs'] * cfg['algorithm']['algorithm_kwargs']['n_steps']
+	# check batch size
+	batch_size = cfg['algorithm']['algorithm_kwargs'].get('batch_size', None)
+	if (batch_size is None):
+		batch_size = cfg['algorithm']['algorithm_kwargs']['n_steps']*cfg['environment']['num_envs']
+		cfg['algorithm']['algorithm_kwargs']['batch_size'] = batch_size
 
 	# save the sampled cfg
 	trial_save_dir = os.path.join(save_dir, 'trial_' + str(trial.number))
@@ -86,10 +89,11 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 		YAML(typ='rt', pure=True).dump(cfg, f)
 
 	# initialize a model
-	model = initialize_model(cfg, trial_save_dir)
+	model = initialize_model(cfg, trial_save_dir, env_device)
 
 	# define pruning callback
-	eval_env = gym.make(cfg['environment']['name'], **cfg['environment'].get('environment_kwargs', dict()))
+	eval_envname = cfg['environment'].get('eval_envname', cfg['environment']['name'])
+	eval_env = gym.make(eval_envname, **cfg['environment'].get('environment_kwargs', dict()))
 	eval_every_timestep = cfg['algorithm'].get('save_every_timestep', None)
 	if (eval_every_timestep is None):
 		eval_every_timestep = cfg['algorithm']['total_timesteps']
@@ -115,7 +119,7 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 		)
 
 	# evaluate the model
-	test_env = gym.make(cfg['environment']['name'], **cfg['environment'].get('environment_kwargs', dict()))
+	test_env = gym.make(eval_envname, **cfg['environment'].get('environment_kwargs', dict()))
 	num_episodes = criteria.get('num_episodes', 20)
 	ep_reward, ep_discounted_reward, final_err = evaluate_model(model, test_env, num_episodes)
 	eval_metric = criteria.get('type', 'ep_discounted_reward')
@@ -128,7 +132,7 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str):
 	elif (eval_metric == 'final_err'):
 		return -np.mean(np.abs(final_err))
 
-def initialize_model(cfg: Dict, save_dir: str):
+def initialize_model(cfg: Dict, save_dir: str, env_device: str):
 	# initialize the policy args
 	policy_args = deepcopy(cfg['policy'])
 	if ('policy_kwargs' not in policy_args.keys()):
@@ -139,6 +143,8 @@ def initialize_model(cfg: Dict, save_dir: str):
 	algorithm_args = deepcopy(cfg['algorithm'])
 	if ('algorithm_kwargs' not in algorithm_args.keys()):
 		algorithm_args['algorithm_kwargs'] = dict()
+	if (env_device=='cuda'):
+		algorithm_args['algorithm_kwargs']['device'] = 'cuda'
 
 	if ('activation_fn' in policy_args['policy_kwargs'].keys()):
 		if (policy_args['policy_kwargs']['activation_fn'] == 'relu'):
@@ -162,21 +168,28 @@ def initialize_model(cfg: Dict, save_dir: str):
 			policy_args['policy_kwargs']['optimizer_kwargs'] = None
 
 	# initialize the environment
-	normalized_rewards = environment_args.get('normalized_rewards', False)
 	num_envs = environment_args.get('num_envs')
-	env = make_vec_env(
-		environment_args.get('name'), n_envs=num_envs, 
-		env_kwargs=environment_args.get('environment_kwargs', dict()),
-		vec_env_cls=DummyVecEnv
-	)
-	if (normalized_rewards):
-		env = VecNormalize(
-			env,
-			norm_obs=False,
-			norm_reward=True,
-			training=True,
-			gamma=algorithm_args['algorithm_kwargs'].get('gamma', 0.99)
+	normalized_rewards = environment_args.get('normalized_rewards', False)
+	if (env_device=='cuda'):
+		if (environment_args.get('name')=='GPUQuadcopter'):
+			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
+		else:
+			NotImplementedError
+		env = GPUVecEnv(env, num_envs=num_envs)
+	else:
+		env = make_vec_env(
+			environment_args.get('name'), n_envs=num_envs, 
+			env_kwargs=environment_args.get('environment_kwargs', dict()),
+			vec_env_cls=DummyVecEnv
 		)
+		if (normalized_rewards):
+			env = VecNormalize(
+				env,
+				norm_obs=False,
+				norm_reward=True,
+				training=True,
+				gamma=algorithm_args['algorithm_kwargs'].get('gamma', 0.99)
+			)
 
 	# initialize the agent
 	learning_rate_schedule = algorithm_args['algorithm_kwargs'].pop('learning_rate_schedule', None)
@@ -252,6 +265,15 @@ class PruneTrialCallback(BaseCallback):
 		pass
 
 	def _on_step(self) -> bool:
+		# log terminal episodic info
+		terminal_infos = [info_i for ii, info_i in enumerate(self.locals['infos']) if self.locals['dones'][ii]]
+		if (len(terminal_infos) > 0):
+			terminal_statnames = [ts for ts in terminal_infos[0].keys() if (ts.startswith('ep_'))]
+			for ts in terminal_statnames:
+				ts_stat = [terminal_infos[ii][ts] for ii in range(len(terminal_infos)) if (not np.isnan(terminal_infos[ii][ts]))]
+				self.logger.record("rollout/" + ts, np.mean(ts_stat))
+
+		# check if trial should be pruned
 		check_point_id = divmod(self.model.num_timesteps+1, self.eval_every_timestep)[0]
 		if (check_point_id > self.curr_check_point_id):
 			ep_reward, ep_discounted_reward, final_err = evaluate_model(self.model, self.eval_env, self.num_eval_episodes)
@@ -284,25 +306,32 @@ def main():
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--env_name', type=str, default='linearsystem', help='environment name')
+	parser.add_argument('--env_device', type=str, default='cpu', help='cpu/cuda simulate environments on cpu or cuda device')
 	parser.add_argument('--algorithm', type=str, default='ppo', help='algorithm to train with')
 	parser.add_argument('--num_trials', type=int, default=10, help='number of trials to evaluate')
 
 	args = parser.parse_args()
 	env_name = args.env_name
+	env_device = args.env_device
 	algo = args.algorithm.lower()
 	num_trials = args.num_trials
 
 	# load cfg files
-	default_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, algo, 'cfg.yaml')
-	class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/systems', env_name + '.py')
-	sweep_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, algo, 'sweep_cfg.yaml') 
+	default_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, env_device, algo, 'cfg.yaml')
+	sweep_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, env_device, algo, 'sweep_cfg.yaml') 
+	if (env_device=='cpu'):
+		class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/systems', env_name + '.py')
+	elif (env_device=='cuda'):
+		class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/gpu_systems', env_name + '.py')
+	else:
+		ValueError
 	default_cfg = YAML().load(open(default_cfg_abs_path, 'r'))
 	if (default_cfg['algorithm'].get('name') is not None):
 		assert algo.upper() == default_cfg['algorithm']['name'], 'default config file is for a different algorithm'
 	sweep_cfg = YAML().load(open(sweep_cfg_abs_path, 'r'))
 	
 	# create save directory
-	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, algo.upper(), 'sweeps')
+	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, env_device, algo.upper(), 'sweeps')
 	if (not os.path.isdir(save_dir)):
 		os.mkdir(save_dir)
 	# find the current sweep number
@@ -345,14 +374,14 @@ def main():
 	sweep_storage = JournalStorage(JournalFileStorage(os.path.join(sweep_dir, "sweep_journal.log")))
 
 	# run trials
-	study_name = env_name + "_" + algo + "_sweep_" + str(sweep_number)
+	study_name = env_name + "_" + env_device + "_" + algo + "_sweep_" + str(sweep_number)
 	wandb.login()
 	wandb_kwargs = {"project": study_name, "name": study_name}
 	wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)
 
 	@wandbc.track_in_wandb()
 	def _run_trial(tr):
-		value = run_trial(tr, default_cfg=deepcopy(default_cfg), sweep_cfg=deepcopy(sweep_cfg), save_dir=sweep_dir)
+		value = run_trial(tr, default_cfg=deepcopy(default_cfg), sweep_cfg=deepcopy(sweep_cfg), save_dir=sweep_dir, env_device=env_device)
 		wandb.log({"value": value})
 		return value
 

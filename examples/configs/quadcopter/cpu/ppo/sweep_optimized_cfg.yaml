@@ -1,0 +1,40 @@
+environment:
+  name: Quadcopter-v0
+  num_envs: 4
+  normalized_rewards: false
+  environment_kwargs:
+    normalized_actions: true
+    normalized_observations: true
+    alpha_cost: 1.223633355917235
+    alpha_terminal_cost: 1.9898048601277891
+    fixed_start: false
+
+algorithm:
+  name: PPO
+  total_timesteps: 15000000
+  save_every_timestep: 15000000
+  algorithm_kwargs:
+    gamma: 0.9995
+    gae_lambda: 0.99
+    ent_coef: 0.
+    vf_coef: 0.5
+    normalize_advantage: False
+    max_grad_norm: 0.9216909281395821
+    learning_rate: 0.00020031589878797038
+    learning_rate_schedule:
+      type: lin
+    n_steps: 430
+    n_epochs: 6
+    batch_size: 1720
+    clip_range: 0.2
+
+policy:
+  save_prefix: model
+  policy_kwargs:
+    net_arch:
+      pi: [256, 256, 256]
+      vf: [256, 256, 256]
+    activation_fn: relu
+    optimizer_class: rmsprop
+    log_std_init: -0.4276933547782321
+    ortho_init: true

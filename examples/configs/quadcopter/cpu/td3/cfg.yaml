@@ -1,0 +1,36 @@
+environment:
+  name: Quadcopter-v0
+  num_envs: 1
+  normalized_rewards: false
+  environment_kwargs:
+    normalized_actions: true
+    normalized_observations: true
+    terminal_cost: true
+    fixed_start: false
+    alpha_cost: 1.146509007946655
+    alpha_terminal_cost: 2.0211659695433806
+
+algorithm:
+  name: TD3
+  total_timesteps: 2500000
+  save_every_timestep: 1250000
+  algorithm_kwargs:
+    gamma: 0.9995
+    learning_rate: 0.001
+    learning_rate_schedule:
+      type: lin
+    train_freq: [1, "episode"]
+    batch_size: 256
+    gradient_steps: -1
+    learning_starts: 3000
+    buffer_size: 1000000
+    device: cuda
+
+policy:
+  save_prefix: model
+  policy_kwargs:
+    net_arch:
+      pi: [256, 256, 256]
+      qf: [256, 256, 256]
+    activation_fn: relu
+    optimizer_class: 'rmsprop'

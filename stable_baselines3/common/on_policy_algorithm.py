@@ -7,12 +7,12 @@ import torch as th
 from gymnasium import spaces
 
 from stable_baselines3.common.base_class import BaseAlgorithm
-from stable_baselines3.common.buffers import DictRolloutBuffer, RolloutBuffer
+from stable_baselines3.common.buffers import DictRolloutBuffer, RolloutBuffer, GPURolloutBuffer
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import obs_as_tensor, safe_mean
-from stable_baselines3.common.vec_env import VecEnv
+from stable_baselines3.common.vec_env import VecEnv, GPUVecEnv
 
 SelfOnPolicyAlgorithm = TypeVar("SelfOnPolicyAlgorithm", bound="OnPolicyAlgorithm")
 
@@ -108,7 +108,12 @@ class OnPolicyAlgorithm(BaseAlgorithm):
         self._setup_lr_schedule()
         self.set_random_seed(self.seed)
 
-        buffer_cls = DictRolloutBuffer if isinstance(self.observation_space, spaces.Dict) else RolloutBuffer
+        if type(self.env)==GPUVecEnv:
+            buffer_cls = GPURolloutBuffer
+        elif isinstance(self.observation_space, spaces.Dict):
+            buffer_cls = DictRolloutBuffer
+        else: 
+            buffer_cls = RolloutBuffer
 
         self.rollout_buffer = buffer_cls(
             self.n_steps,
@@ -165,20 +170,25 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                 # Convert to pytorch tensor or to TensorDict
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
                 actions, values, log_probs = self.policy(obs_tensor)
-            actions = actions.cpu().numpy()
-
-            # Rescale and perform action
-            clipped_actions = actions
-
-            if isinstance(self.action_space, spaces.Box):
-                if self.policy.squash_output:
-                    # Unscale the actions to match env bounds
-                    # if they were previously squashed (scaled in [-1, 1])
-                    clipped_actions = self.policy.unscale_action(clipped_actions)
+            
+            if (type(rollout_buffer)==GPURolloutBuffer):
+                if isinstance(self.action_space, spaces.Box):
+                    clipped_actions = th.clip(actions, self.env.action_space_low, self.env.action_space_high)
                 else:
-                    # Otherwise, clip the actions to avoid out of bound error
-                    # as we are sampling from an unbounded Gaussian distribution
-                    clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
+                    NotImplementedError
+            else:
+                actions = actions.cpu().numpy()
+                # Rescale and perform action
+                clipped_actions = actions
+                if isinstance(self.action_space, spaces.Box):
+                    if self.policy.squash_output:
+                        # Unscale the actions to match env bounds
+                        # if they were previously squashed (scaled in [-1, 1])
+                        clipped_actions = self.policy.unscale_action(clipped_actions)
+                    else:
+                        # Otherwise, clip the actions to avoid out of bound error
+                        # as we are sampling from an unbounded Gaussian distribution
+                        clipped_actions = np.clip(actions, self.action_space.low, self.action_space.high)
 
             new_obs, rewards, dones, infos = env.step(clipped_actions)
 
@@ -198,13 +208,13 @@ class OnPolicyAlgorithm(BaseAlgorithm):
 
             # Handle timeout by bootstraping with value function
             # see GitHub issue #633
-            for idx, done in enumerate(dones):
+            for idx, info in enumerate(infos):
                 if (
-                    done
-                    and infos[idx].get("terminal_observation") is not None
-                    and infos[idx].get("TimeLimit.truncated", False)
+                    dones[idx]
+                    and info.get("terminal_observation") is not None
+                    and info.get("TimeLimit.truncated", False)
                 ):
-                    terminal_obs = self.policy.obs_to_tensor(infos[idx]["terminal_observation"])[0]
+                    terminal_obs = self.policy.obs_to_tensor(info["terminal_observation"])[0]
                     with th.no_grad():
                         terminal_value = self.policy.predict_values(terminal_obs)[0]  # type: ignore[arg-type]
                     rewards[idx] += self.gamma * terminal_value
