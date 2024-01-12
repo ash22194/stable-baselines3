@@ -1,7 +1,7 @@
 environment:
   name: 'GPUQuadcopter'
   eval_envname: Quadcopter-v0
-  num_envs: 80
+  num_envs: 3
   normalized_rewards: false
   environment_kwargs:
     dt: 0.004
@@ -24,7 +24,7 @@ algorithm:
     learning_rate: 0.0003655
     learning_rate_schedule:
       type: lin
-    n_steps: 140
+    n_steps: 281
     n_epochs: 7
     batch_size: null
     clip_range: 0.2

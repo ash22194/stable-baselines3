@@ -9,7 +9,7 @@ class Quadcopter(gym.Env):
 	metadata = {'render_modes': ['human']}
 
 	def __init__(
-		self, sys=dict(), dt=1e-3, fixed_start=False, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_terminal_cost=1.):
+		self, sys=dict(), dt=1e-3, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_terminal_cost=1.):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
 		m = 0.5

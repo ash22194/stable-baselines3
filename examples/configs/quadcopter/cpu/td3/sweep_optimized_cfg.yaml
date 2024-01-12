@@ -5,8 +5,6 @@ environment:
   environment_kwargs:
     normalized_actions: true
     normalized_observations: true
-    terminal_cost: true
-    fixed_start: false
     alpha_cost: 1.146509007946655
     alpha_terminal_cost: 2.0211659695433806
 

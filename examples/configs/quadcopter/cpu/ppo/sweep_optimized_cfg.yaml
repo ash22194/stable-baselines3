@@ -7,7 +7,6 @@ environment:
     normalized_observations: true
     alpha_cost: 1.223633355917235
     alpha_terminal_cost: 1.9898048601277891
-    fixed_start: false
 
 algorithm:
   name: PPO

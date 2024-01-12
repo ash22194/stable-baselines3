@@ -5,10 +5,8 @@ environment:
   environment_kwargs:
     normalized_actions: True
     normalized_observations: True
-    terminal_cost: True
     alpha_cost: 1.224
     alpha_terminal_cost: 1.99
-    fixed_start: False
 
 algorithm:
   name: 'PPO'
