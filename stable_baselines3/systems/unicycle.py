@@ -9,7 +9,7 @@ class Unicycle(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, sys=dict(), dt=1e-3, fixed_start=False, normalized_actions=True, normalized_observations=False, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
+	def __init__(self, sys=dict(), dt=1e-3, normalized_actions=True, normalized_observations=False, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Unicycle, self).__init__()
 		# Define model paramters
 		mw = 0.5
@@ -74,7 +74,6 @@ class Unicycle(gym.Env):
 		self.alpha = sys['alpha']
 		self.fcoeff = sys['fcoeff']
 		self.baumgarte_factor = 10
-		self.fixed_start = fixed_start
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
 		self.nonlinear_cost = nonlinear_cost
@@ -148,10 +147,7 @@ class Unicycle(gym.Env):
 	def reset(self, seed=None, options=None, state=None):
 		super().reset(seed=seed)
 		if (state is None):
-			if (self.fixed_start):
-				sample = np.array([0.2, 0.3, 0.1, 0., 0.1, 0., 0., 0., 5., 0.])
-			else:
-				sample = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+			sample = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
 		else:
 			assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
 			# construct the dependent states from the independent

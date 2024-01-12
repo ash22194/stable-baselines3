@@ -53,7 +53,6 @@ class QuadcopterSkipStep(gym.Env):
 		self.g = sys['g']
 		self.bk = sys['bk']
 		self.I = sys['I']
-		self.fixed_start = fixed_start
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
 		self.alpha_cost = alpha_cost
@@ -126,10 +125,7 @@ class QuadcopterSkipStep(gym.Env):
 	def reset(self, seed=None, options=None, state=None):
 		super().reset(seed=seed)
 		if (state is None):
-			if (self.fixed_start):
-				self.state = np.array([0., 0., 0.75, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-			else:
-				self.state = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+			self.state = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
 		else:
 			assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
 			self.state = state
