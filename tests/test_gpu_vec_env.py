@@ -3,7 +3,7 @@ import numpy as np
 import torch as th
 import gymnasium as gym
 
-from stable_baselines3.gpu_systems import GPUQuadcopter
+from stable_baselines3.gpu_systems import GPUQuadcopter, GPUUnicycle
 from stable_baselines3.common.vec_env import GPUVecEnv, DummyVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 
@@ -23,12 +23,12 @@ def main():
 	if (env_name=='quadcopter'):
 		env_cpu = make_vec_env('Quadcopter-v0', num_envs, env_kwargs=dict(normalized_observations=normalized_observations))
 		env_gpu = GPUVecEnv(GPUQuadcopter(device='cuda', normalized_observations=normalized_observations), num_envs=num_envs)
+	elif (env_name=='unicycle'):
+		env_cpu = make_vec_env('Unicycle-v0', num_envs, env_kwargs=dict(normalized_observations=normalized_observations))
+		env_gpu = GPUVecEnv(GPUUnicycle(device='cuda', normalized_observations=normalized_observations), num_envs=num_envs)
 	else:
 		NotImplementedError
 
-	goal = th.zeros(12, device='cuda')
-	goal[2:] = env_gpu.get_attr('th_goal')[0]+th.rand(10, device='cuda')*0.1
-	goal = th.ones((num_envs, 1), device='cuda') * goal
 	obs_gpu, _ = env_gpu.env_method('reset')[0]
 	state_gpu = env_gpu.get_attr('state')[0].cpu().numpy()
 	obs_cpu = np.zeros(obs_gpu.shape)
@@ -39,7 +39,7 @@ def main():
 	end_cpu = th.cuda.Event(enable_timing=True)
 	start_gpu = th.cuda.Event(enable_timing=True)
 	end_gpu = th.cuda.Event(enable_timing=True)
-	
+
 	done = False
 	traj_obs_cpu = [obs_cpu]
 	traj_obs_gpu = [obs_gpu.cpu().numpy()]

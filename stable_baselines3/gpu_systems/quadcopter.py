@@ -1,5 +1,3 @@
-
-# import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import torch as th
@@ -162,16 +160,17 @@ class GPUQuadcopter:
 			else:
 				done = th.ones(self.num_envs, device=self.device, dtype=bool)
 			num_done = th.sum(done)
-			step_count_new = 0*th.randint(low=0, high=self.horizon, size=(num_done,1), dtype=th.float32, device=self.device)
-			state_new = ((th.rand((num_done, self.independent_sampling_dims.shape[0]), device=self.device, dtype=self.th_dtype) - 0.5) * (self.th_x_sample_limits_range))
-			state_new = (((self.horizon - step_count_new) / self.horizon) * state_new)
-			state_new += self.th_x_sample_limits_mid 
+			if (num_done > 0):
+				step_count_new = 0*th.randint(low=0, high=self.horizon, size=(num_done,1), dtype=th.float32, device=self.device)
+				state_new = ((th.rand((num_done, self.independent_sampling_dims.shape[0]), device=self.device, dtype=self.th_dtype) - 0.5) * (self.th_x_sample_limits_range))
+				state_new = (((self.horizon - step_count_new) / self.horizon) * state_new)
+				state_new += self.th_x_sample_limits_mid 
 
-			self.step_count[done] = step_count_new[:,0]
-			self.state[done,:] = state_new
-			self._set_obs()
-			self.cumm_reward[done] = 0.
+				self.step_count[done] = step_count_new[:,0]
+				self.state[done,:] = state_new
+				self.cumm_reward[done] = 0.
 
+		self._set_obs()
 		info = {}
 		
 		return self.get_obs(), info
@@ -207,7 +206,7 @@ class GPUQuadcopter:
 		else:
 			done = th.ones(self.num_envs, device=self.device, dtype=bool)
 		x = self.obs[:,:self.observation_dims.shape[0]]
-		cost = th.sum((x - self.th_goal @ self.th_QT) * (x - self.th_goal), dim=1, keepdim=False) * self.alpha_terminal_cost
+		cost = th.sum(((x - self.th_goal) @ self.th_QT) * (x - self.th_goal), dim=1, keepdim=False) * self.alpha_terminal_cost
 		cost = cost * done
 
 		return cost
@@ -289,6 +288,7 @@ class GPUQuadcopter:
 		return dx
 
 	def _create_visualizer(self):
+		#TODO visualize all the agents in parallel
 		self.viz = meshcat.Visualizer()
 		# Create the quadcopter geometry
 		self.viz['root'].set_object(meshcat.geometry.Box([2*self.l, 0.01, 0.01]))  # units in meters

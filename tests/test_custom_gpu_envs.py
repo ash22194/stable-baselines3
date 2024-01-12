@@ -3,7 +3,7 @@ import numpy as np
 import torch as th
 import gymnasium as gym
 
-from stable_baselines3.gpu_systems import GPUQuadcopter
+from stable_baselines3.gpu_systems import GPUQuadcopter, GPUUnicycle
 
 def main():
 	parser = argparse.ArgumentParser()
@@ -21,6 +21,9 @@ def main():
 	if (env_name == 'quadcopter'):
 		env_cpu = gym.make('Quadcopter-v0', normalized_observations=normalized_observations)
 		env_gpu = GPUQuadcopter(device=device, num_envs=num_envs, normalized_observations=normalized_observations)
+	elif (env_name == 'unicycle'):
+		env_cpu = gym.make('Unicycle-v0', normalized_observations=normalized_observations)
+		env_gpu = GPUUnicycle(device=device, num_envs=num_envs, normalized_observations=normalized_observations)
 	else:
 		NotImplementedError
 
@@ -29,13 +32,31 @@ def main():
 	start_gpu = th.cuda.Event(enable_timing=True)
 	end_gpu = th.cuda.Event(enable_timing=True)
 	
+	num_samples = 1000
+	dyn_err = []
+	# Test dyn first
+	for nn in range(num_samples):
+		obs_cpu, _ = env_cpu.reset()
+		obs_gpu, _ = env_gpu.reset(state=(th.ones((num_envs, 1), device=device) * th.asarray(env_cpu.state, device=device)))
+
+		action = env_cpu.action_space.low + np.random.rand()*(env_cpu.action_space.high - env_cpu.action_space.low)
+
+		dx_cpu = env_cpu.dyn_full(env_cpu.state[:,np.newaxis], action[:,np.newaxis])
+		dx_gpu = env_gpu.dyn_full(env_gpu.state, th.asarray(action[np.newaxis,:], device=device))
+
+		dyn_err += [np.max(np.abs(dx_cpu - (dx_gpu[0:1,:].cpu().clone().numpy().T)))]
+	
+	print("Mean (max) max dyn err : %.6f (%.6f)"%(np.mean(np.array(dyn_err)), np.max(np.array(dyn_err))))
+
 	done = False
 	obs_cpu, _ = env_cpu.reset()
 	obs_gpu, _ = env_gpu.reset(state=(th.ones((num_envs, 1), device=device) * th.asarray(env_cpu.state, device=device)))
 	
-	set_trace()
+	action_cpu = []
+	dx_cpu = []
+	dx_gpu = []
 	traj_obs_cpu = [obs_cpu]
-	traj_obs_gpu = [obs_gpu.cpu().numpy()]
+	traj_obs_gpu = [obs_gpu.cpu().clone().numpy()]
 	traj_rew_cpu = []
 	traj_rew_gpu = []
 	step_time_cpu = []
@@ -43,6 +64,12 @@ def main():
 	count = 0
 	while (not done):
 		action = env_cpu.action_space.low + np.random.rand()*(env_cpu.action_space.high - env_cpu.action_space.low)
+		action_cpu += [action.copy()]
+
+		# compute accelerations
+		dx_cpu += [env_cpu.dyn_full(env_cpu.state[:,np.newaxis], action[:,np.newaxis])]
+		dx_gpu += [env_gpu.dyn_full(env_gpu.state, th.asarray(action[np.newaxis,:], device=device))] 
+
 		start_cpu.record()
 		obs_cpu, rew_cpu, done, _, _ = env_cpu.step(action)
 		end_cpu.record()
@@ -54,10 +81,10 @@ def main():
 		th.cuda.synchronize()
 
 		traj_obs_cpu += [obs_cpu]
-		traj_obs_gpu += [obs_gpu.cpu().numpy()]
+		traj_obs_gpu += [obs_gpu.cpu().clone().numpy()]
 
 		traj_rew_cpu += [rew_cpu]
-		traj_rew_gpu += [rew_gpu.cpu().numpy()]
+		traj_rew_gpu += [rew_gpu.cpu().clone().numpy()]
 
 		step_time_cpu += [start_cpu.elapsed_time(end_cpu)]
 		step_time_gpu += [start_gpu.elapsed_time(end_gpu)]

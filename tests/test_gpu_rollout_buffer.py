@@ -3,7 +3,7 @@ import argparse
 import torch as th
 import numpy as np
 
-from stable_baselines3.gpu_systems import GPUQuadcopter
+from stable_baselines3.gpu_systems import GPUQuadcopter, GPUUnicycle
 from stable_baselines3.common.vec_env import GPUVecEnv
 from stable_baselines3.common.buffers import GPURolloutBuffer,RolloutBuffer
 from stable_baselines3.common.env_util import make_vec_env
@@ -16,6 +16,7 @@ def main():
     parser.add_argument('--buffer_size', type=int, default=100, help='length of the buffer')
 
     args = parser.parse_args()
+    th.set_default_tensor_type(th.FloatTensor)
 
     env_name = args.env_name
     num_envs = args.num_envs
@@ -25,6 +26,8 @@ def main():
     device = 'cuda'
     if (env_name=='quadcopter'):
         env_gpu = GPUVecEnv(GPUQuadcopter(device=device), num_envs=num_envs)
+    elif (env_name=='unicycle'):
+        env_gpu = GPUVecEnv(GPUUnicycle(device=device), num_envs=num_envs)
     else:
         NotImplementedError
 
