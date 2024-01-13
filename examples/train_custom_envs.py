@@ -10,7 +10,7 @@ import gymnasium as gym
 import numpy as np
 from typing import Callable, Dict
 
-from stable_baselines3.gpu_systems import GPUQuadcopter
+from stable_baselines3.gpu_systems import GPUQuadcopter, GPUUnicycle
 
 from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.callbacks import BaseCallback, CustomSaveLogCallback
@@ -91,11 +91,21 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 			policy_args['policy_kwargs']['optimizer_class'] = torch.optim.Adam
 			policy_args['policy_kwargs']['optimizer_kwargs'] = None
 
+	# check batch size
+	batch_size = algorithm_args['algorithm_kwargs'].get('batch_size', None)
+	if (batch_size is None):
+		batch_size = 1
+	if (batch_size <= 1):
+		batch_size *= (algorithm_args['algorithm_kwargs']['n_steps']*environment_args['num_envs'])
+	algorithm_args['algorithm_kwargs']['batch_size'] = batch_size
+
 	# initialize the environment
 	num_envs = environment_args.get('num_envs')
 	if (env_device=='cuda'):
 		if (environment_args.get('name')=='GPUQuadcopter'):
 			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
+		elif (environment_args.get('name')=='GPUUnicycle'):
+			env = GPUUnicycle(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		else:
 			NotImplementedError
 		env = GPUVecEnv(env, num_envs=num_envs)

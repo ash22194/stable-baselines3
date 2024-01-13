@@ -78,8 +78,10 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str, env_devi
 	# check batch size
 	batch_size = cfg['algorithm']['algorithm_kwargs'].get('batch_size', None)
 	if (batch_size is None):
-		batch_size = cfg['algorithm']['algorithm_kwargs']['n_steps']*cfg['environment']['num_envs']
-		cfg['algorithm']['algorithm_kwargs']['batch_size'] = batch_size
+		batch_size = 1
+	if (batch_size <= 1):
+		batch_size *= (cfg['algorithm']['algorithm_kwargs']['n_steps']*cfg['environment']['num_envs'])
+	cfg['algorithm']['algorithm_kwargs']['batch_size'] = batch_size
 
 	# save the sampled cfg
 	trial_save_dir = os.path.join(save_dir, 'trial_' + str(trial.number))
