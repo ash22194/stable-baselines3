@@ -2,14 +2,14 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import meshcat
-from ipdb import set_trace
+
 import scipy.spatial.transform as transfm
 
 class Unicycle(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, sys=dict(), dt=1e-3, normalized_actions=True, normalized_observations=False, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
+	def __init__(self, sys=dict(), dt=1e-3, T=2., normalized_actions=True, normalized_observations=False, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Unicycle, self).__init__()
 		# Define model paramters
 		mw = 0.5
@@ -37,7 +37,7 @@ class Unicycle(gym.Env):
 			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/3, np.pi/3], [-np.pi/3, np.pi/3], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [5., 35.], [-8., 8.]]),\
 			'u_limits': np.array([[-15., 15.], [-15., 15.]])}
 		sys_.update(sys)
-		sys_.update({'dt':dt})
+		sys_.update({'dt':dt, 'T':T})
 		sys_['lambda_'] = (1. - sys_['gamma_']) / sys_['dt']
 		sys.update(sys_)
 
@@ -502,7 +502,6 @@ class Unicycle(gym.Env):
 
 		# # Add baumgarte stabilization
 		# err_p, err_v = self._err_posvel_contact(x[:,0])
-		# # set_trace()
 		# nle[5:8,0] += ((2 * self.baumgarte_factor * err_v) + (self.baumgarte_factor**2 * err_p))
 
 		acc = np.linalg.solve(M, -nle)

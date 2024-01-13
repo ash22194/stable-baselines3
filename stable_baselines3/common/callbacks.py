@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import gymnasium as gym
 import numpy as np
-from ipdb import set_trace
+
 from stable_baselines3.common.logger import Logger
 
 try:

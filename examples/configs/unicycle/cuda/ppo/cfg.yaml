@@ -4,6 +4,8 @@ environment:
   num_envs: 1
   normalized_rewards: False
   environment_kwargs:
+    dt: 0.001
+    T: 2.
     normalized_actions: True
     normalized_observations: True
     alpha_cost: 1.
@@ -25,8 +27,9 @@ algorithm:
       type: 'lin'
     n_steps: 320
     n_epochs: 1
-    batch_size: 320
+    batch_size: null
     clip_range: 0.2
+    device: 'cuda'
 
 policy:
   save_prefix: 'model'

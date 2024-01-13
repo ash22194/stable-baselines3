@@ -11,6 +11,10 @@ environment:
   dt:
     type: 'categorical'
     choices: [0.002, 0.003, 0.004]
+  
+  T:
+    type: 'categorical'
+    choices: [2., 3.]
 
 algorithm:
   gamma:
@@ -41,6 +45,12 @@ algorithm:
     high: 0.001
     log: True
   
+  learning_rate_schedule:
+    type: 'categorical'
+    choices:
+      - type: null
+      - type: 'lin'
+
   max_grad_norm:
     type: 'float'
     low: 0.1

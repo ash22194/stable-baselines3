@@ -4,7 +4,6 @@ import torch as th
 import meshcat
 import scipy.spatial.transform as transfm
 
-from ipdb import set_trace
 
 def th_get_rotation(ry, rx, rz, device=None, dtype=None):
 	# Function to construct batch of rotation matrices from pitch, roll and yaw angles
@@ -39,7 +38,7 @@ class GPUUnicycle:
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, device='cpu', num_envs=1, sys=dict(), dt=1e-3, normalized_actions=True, normalized_observations=True, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
+	def __init__(self, device='cpu', num_envs=1, sys=dict(), dt=1e-3, T=2., normalized_actions=True, normalized_observations=True, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Unicycle, self).__init__()
 		# Define model paramters
 		mw = 0.5
@@ -67,7 +66,7 @@ class GPUUnicycle:
 			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/3, np.pi/3], [-np.pi/3, np.pi/3], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [5., 35.], [-8., 8.]]),\
 			'u_limits': np.array([[-15., 15.], [-15., 15.]])}
 		sys_.update(sys)
-		sys_.update({'dt':dt})
+		sys_.update({'dt':dt, 'T':T})
 		sys_['lambda_'] = (1. - sys_['gamma_']) / sys_['dt']
 		sys.update(sys_)
 		self.device = device
