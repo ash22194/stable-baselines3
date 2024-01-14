@@ -136,6 +136,8 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 			learning_rate = exponential_schedule(learning_rate, learning_rate_schedule['decay_rate'])
 		elif (learning_rate_schedule['type'] == 'sawt'):
 			learning_rate = decay_sawtooth_schedule(learning_rate, learning_rate_schedule['sawtooth_width'])
+		elif (learning_rate_schedule['type'] == 'kla'):
+			algorithm_args['algorithm_kwargs']['target_kl'] = learning_rate_schedule['target_kl']
 		algorithm_args['algorithm_kwargs']['learning_rate'] = learning_rate
 
 	if (algorithm_args.get('name') is not None):
