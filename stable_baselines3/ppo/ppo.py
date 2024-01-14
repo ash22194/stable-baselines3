@@ -9,7 +9,7 @@ from torch.nn import functional as F
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from stable_baselines3.common.policies import ActorCriticCnnPolicy, ActorCriticPolicy, BasePolicy, MultiInputActorCriticPolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
-from stable_baselines3.common.utils import explained_variance, get_schedule_fn
+from stable_baselines3.common.utils import explained_variance, get_schedule_fn, update_learning_rate
 from stable_baselines3.common.buffers import RolloutBuffer
 
 SelfPPO = TypeVar("SelfPPO", bound="PPO")
@@ -262,11 +262,18 @@ class PPO(OnPolicyAlgorithm):
                     approx_kl_div = th.mean((th.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
                     approx_kl_divs.append(approx_kl_div)
 
-                if self.target_kl is not None and approx_kl_div > 1.5 * self.target_kl:
-                    continue_training = False
-                    if self.verbose >= 1:
-                        print(f"Early stopping at step {epoch} due to reaching max kl: {approx_kl_div:.2f}")
-                    break
+                # if self.target_kl is not None and approx_kl_div > 1.5 * self.target_kl:
+                #     continue_training = False
+                #     if self.verbose >= 1:
+                #         print(f"Early stopping at step {epoch} due to reaching max kl: {approx_kl_div:.2f}")
+                #     break
+                if (self.target_kl is not None):
+                    if (approx_kl_div > (2. * self.target_kl)):
+                        self.learning_rate = max(1e-5, self.learning_rate / 1.5)
+                    elif ((approx_kl_div < (self.target_kl / 2.)) and (approx_kl_div > 0.)):
+                        self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+
+                    update_learning_rate(self.policy.optimizer, self.learning_rate)
 
                 # Optimization step
                 self.policy.optimizer.zero_grad()
