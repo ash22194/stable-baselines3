@@ -81,7 +81,7 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str, env_devi
 		batch_size = 1
 	if (batch_size <= 1):
 		batch_size *= (cfg['algorithm']['algorithm_kwargs']['n_steps']*cfg['environment']['num_envs'])
-	cfg['algorithm']['algorithm_kwargs']['batch_size'] = batch_size
+	cfg['algorithm']['algorithm_kwargs']['batch_size'] = int(batch_size)
 
 	# save the sampled cfg
 	trial_save_dir = os.path.join(save_dir, 'trial_' + str(trial.number))
@@ -378,7 +378,7 @@ def main():
 	sweep_storage = JournalStorage(JournalFileStorage(os.path.join(sweep_dir, "sweep_journal.log")))
 
 	# run trials
-	study_name = env_name + "_" + env_device + "_" + algo + "_sweep_" + str(sweep_number)
+	study_name = 'bridges_' + env_name + "_" + env_device + "_" + algo + "_sweep_" + str(sweep_number)
 	wandb.login()
 	wandb_kwargs = {"project": study_name, "name": study_name}
 	wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)

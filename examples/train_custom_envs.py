@@ -97,7 +97,7 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 		batch_size = 1
 	if (batch_size <= 1):
 		batch_size *= (algorithm_args['algorithm_kwargs']['n_steps']*environment_args['num_envs'])
-	algorithm_args['algorithm_kwargs']['batch_size'] = batch_size
+	algorithm_args['algorithm_kwargs']['batch_size'] = int(batch_size)
 
 	# initialize the environment
 	num_envs = environment_args.get('num_envs')
