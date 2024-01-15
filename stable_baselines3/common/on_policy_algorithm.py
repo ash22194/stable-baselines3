@@ -170,6 +170,9 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                 # Convert to pytorch tensor or to TensorDict
                 obs_tensor = obs_as_tensor(self._last_obs, self.device)
                 actions, values, log_probs = self.policy(obs_tensor)
+                actions_distribution = self.policy.get_distribution(obs_tensor)
+                actions_mu = actions_distribution.distribution.mean
+                actions_log_std = th.log(actions_distribution.distribution.scale + 1e-5)
             
             if (type(rollout_buffer)==GPURolloutBuffer):
                 if isinstance(self.action_space, spaces.Box):
@@ -222,6 +225,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
             rollout_buffer.add(
                 self._last_obs,  # type: ignore[arg-type]
                 actions,
+                actions_mu,
+                actions_log_std,
                 rewards,
                 self._last_episode_starts,  # type: ignore[arg-type]
                 values,
