@@ -544,6 +544,8 @@ class GPURolloutBuffer(BaseBuffer):
     """
     observations: th.FloatTensor
     actions: th.FloatTensor
+    actions_mu: th.FloatTensor
+    actions_log_std: th.FloatTensor
     rewards: th.FloatTensor
     advantages: th.FloatTensor
     returns: th.FloatTensor
@@ -569,6 +571,8 @@ class GPURolloutBuffer(BaseBuffer):
     def reset(self):
         self.observations = th.zeros((self.buffer_size, self.n_envs, *self.obs_shape), dtype=th.float32, device=self.device)
         self.actions = th.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=th.float32, device=self.device)
+        self.actions_mu = th.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=th.float32, device=self.device)
+        self.actions_log_std = th.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=th.float32, device=self.device)
         self.rewards = th.zeros((self.buffer_size, self.n_envs), dtype=th.float32, device=self.device)
         self.returns = th.zeros((self.buffer_size, self.n_envs), dtype=th.float32, device=self.device)
         self.episode_starts = th.zeros((self.buffer_size, self.n_envs), dtype=th.float32, device=self.device)
@@ -600,6 +604,8 @@ class GPURolloutBuffer(BaseBuffer):
     def add(self,
         obs,
         action,
+        action_mu,
+        action_log_std,
         reward,
         episode_start,
         value,
@@ -628,6 +634,8 @@ class GPURolloutBuffer(BaseBuffer):
 
         self.observations[self.pos] = th.asarray(obs, device=self.device)
         self.actions[self.pos] = th.asarray(action, device=self.device)
+        self.actions_mu[self.pos] = th.asarray(action_mu, device=self.device)
+        self.actions_log_std[self.pos] = th.asarray(action_log_std, device=self.device)
         self.rewards[self.pos] = th.asarray(reward, device=self.device)
         self.episode_starts[self.pos] = th.asarray(episode_start, device=self.device)
         self.values[self.pos] = value.clone().flatten()
@@ -644,6 +652,8 @@ class GPURolloutBuffer(BaseBuffer):
             for tensor in [
                 "observations",
                 "actions",
+                "actions_mu",
+                "actions_log_std",
                 "values",
                 "log_probs",
                 "advantages",
@@ -668,6 +678,8 @@ class GPURolloutBuffer(BaseBuffer):
         data = (
             self.observations[batch_inds],
             self.actions[batch_inds],
+            self.actions_mu[batch_inds],
+            self.actions_log_std[batch_inds],
             self.values[batch_inds].flatten(),
             self.log_probs[batch_inds].flatten(),
             self.advantages[batch_inds].flatten(),
