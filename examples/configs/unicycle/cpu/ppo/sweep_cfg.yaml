@@ -8,9 +8,15 @@ environment:
     low: 1
     high: 5
 
+  alpha_cost:
+    type: 'float'
+    low: 0.1
+    high: 10
+    log: True
+
   alpha_terminal_cost:
     type: 'float'
-    low: 0.01
+    low: 0.1
     high: 10
     log: True
 
@@ -18,7 +24,7 @@ algorithm:
   n_steps:
     type: 'int'
     low: 64
-    high: 2048
+    high: 4096
     log: True
   
   n_epochs:
@@ -36,12 +42,6 @@ algorithm:
     type: 'float'
     low: 0.1
     high: 5
-  
-  ent_coef:
-    type: 'float'
-    low: 0.00001
-    high: 0.01
-    log: True
 
 policy:
   log_std_init:
