@@ -5,19 +5,26 @@ criteria:
 environment:
   num_envs:
     type: 'int'
-    low: 20
-    high: 100
+    low: 500
+    high: 1000
+  
+  alpha_cost:
+    type: 'float'
+    low: 0.01
+    high: 10
+    log: True
+
+  alpha_terminal_cost:
+    type: 'float'
+    low: 0.01
+    high: 10
+    log: True
 
 algorithm:
   n_steps:
     type: 'int'
     low: 50
     high: 500
-
-  n_epochs:
-    type: 'int'
-    low: 1
-    high: 20
   
   learning_rate:
     type: 'float'
