@@ -274,6 +274,7 @@ class PPO(OnPolicyAlgorithm):
                         self.learning_rate = min(1e-2, self.learning_rate * 1.5)
 
                     update_learning_rate(self.policy.optimizer, self.learning_rate)
+                    self.logger.record("train/learning_rate", self.learning_rate)
 
                 # Optimization step
                 self.policy.optimizer.zero_grad()

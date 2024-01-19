@@ -380,7 +380,7 @@ def main():
 	sweep_storage = JournalStorage(JournalFileStorage(os.path.join(sweep_dir, "sweep_journal.log")))
 
 	# run trials
-	study_name = 'bridges_' + env_name + "_" + env_device + "_" + algo + "_sweep_" + str(sweep_number)
+	study_name = env_name + "_" + env_device + "_" + algo + "_sweep_" + str(sweep_number)
 	wandb.login()
 	wandb_kwargs = {"project": study_name, "name": study_name}
 	wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)
