@@ -4,8 +4,8 @@ environment:
   num_envs: 1
   normalized_rewards: False
   environment_kwargs:
-    dt: 0.001
-    T: 2.
+    dt: 0.004
+    T: 3.
     normalized_actions: True
     normalized_observations: True
     alpha_cost: 1.
@@ -14,20 +14,21 @@ environment:
 
 algorithm:
   name: 'PPO'
-  total_timesteps: 15000000
-  save_every_timestep: 10000000
+  total_timesteps: 25000000
+  save_every_timestep: 20000000
   algorithm_kwargs:
     gamma: 0.9995
     gae_lambda: 0.99
     ent_coef: 0.
     vf_coef: 0.5
+    normalize_advantage: False
     max_grad_norm: 0.5
     learning_rate: 0.0004
     learning_rate_schedule: 
       type: 'lin'
     n_steps: 320
     n_epochs: 1
-    batch_size: null
+    batch_size: 0.25
     clip_range: 0.2
     device: 'cuda'
 

@@ -5,51 +5,44 @@ criteria:
 environment:
   num_envs:
     type: 'int'
-    low: 20
-    high: 100
-  
-  dt:
-    type: 'categorical'
-    choices: [0.002, 0.003, 0.004]
-  
-  T:
-    type: 'categorical'
-    choices: [2., 3.]
+    low: 100
+    high: 500
 
-algorithm:
-  gamma:
+  alpha_cost:
     type: 'float'
-    low: 0.99
-    high: 0.9999
+    low: 0.1
+    high: 10
     log: True
 
-  gae_lambda:
+  alpha_terminal_cost:
     type: 'float'
-    low: 0
-    high: 1
+    low: 0.1
+    high: 10
+    log: True
 
+algorithm:
   n_steps:
     type: 'int'
-    low: 30
-    high: 300
+    low: 100
+    high: 500
 
   n_epochs:
     type: 'int'
     low: 1
     high: 20
     log: True
-  
+
   learning_rate:
     type: 'float'
-    low: 0.00001
-    high: 0.001
+    low: 0.00002
+    high: 0.002
     log: True
-  
-  learning_rate_schedule:
-    type: 'categorical'
-    choices:
-      - type: null
-      - type: 'lin'
+
+  ent_coef:
+    type: 'float'
+    low: 0.000001
+    high: 0.1
+    log: True
 
   max_grad_norm:
     type: 'float'
@@ -66,4 +59,3 @@ policy:
     type: 'float'
     low: -4
     high: -2
-    
