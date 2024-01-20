@@ -29,10 +29,11 @@ class Unicycle(gym.Env):
 			'Iw': np.diag([mw*(rw**2 + 0.04**2)/5, 2*mw*(rw**2)/5, mw*(rw**2 + 0.04**2)/5]),\
 			'If': np.diag([mf*(frame_length**2 + 0.08**2)/12, mf*(frame_length**2 + 0.08**2)/12, 2*mf*(0.08**2)/12]),\
 			'Id': np.diag([md*(upper_body_length**2 + 0.08**2)/12, md*(upper_body_length**2 + 0.08**2)/12, 2*md*(0.08**2)/12]),\
-			'alpha': -np.pi/2, 'g': 9.81, 'fcoeff': 0.0025, 'T': 2, 'dt':1e-3, 'gamma_':0.9995, 'X_DIMS': 16, 'U_DIMS': 2,\
+			'alpha': -np.pi/2, 'g': 9.81, 'fcoeff': 0.05, 'T': 2, 'dt':1e-3, 'gamma_':0.9995, 'X_DIMS': 16, 'U_DIMS': 2,\
 			'goal': goal, 'u0': np.zeros((2,1)),\
-			# 'Q': np.diag([2.5, 2.5, 1., 0.25, 0.001, 0.001, 0.05, 0.25]), 'R': (np.eye(2) / 100.),\
-			'Q': np.diag([0.1,0.1, 0.0005,0.0005, 0.,0., 0.00025, 0.001]), 'R': (np.eye(2) / 5000.), 'QT': 10*np.eye(8), \
+			'Q': np.diag([0.25, 1, 0.025, 0.0025, 0.0001, 0.001, 0.0005, 0.0001]), 'R': (np.eye(2) / 1000.), 'QT': 2*np.diag([1.,1.,1.,2.,1.,1.,1.,2.]),\
+			# 'Q': np.diag([0.1,0.1, 0.0005,0.0005, 0.,0., 0.00025, 0.001]), 'R': (np.eye(2) / 5000.), 'QT': 10*np.eye(8), \
+			# 'Q': np.diag([1.,1., 0.001,0.001, 0.01,0.0001, 0.0025, 0.0005]), 'R': (np.eye(2) / 5000.), 'QT': 2*np.eye(8), \
 			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-1., 1.], [-1., 1.], [-1., 1.], [15., 25.], [-1., 1.]]),\
 			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/3, np.pi/3], [-np.pi/3, np.pi/3], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [5., 35.], [-8., 8.]]),\
 			'u_limits': np.array([[-15., 15.], [-15., 15.]])}
@@ -78,7 +79,8 @@ class Unicycle(gym.Env):
 		self.normalized_observations = normalized_observations
 		self.nonlinear_cost = nonlinear_cost
 		self.alpha_cost = alpha_cost
-		self.alpha_action_cost = alpha_action_cost
+		# self.alpha_action_cost = alpha_action_cost
+		self.alpha_action_cost = alpha_cost
 		self.alpha_terminal_cost = alpha_terminal_cost
 		# self.reset()
 
