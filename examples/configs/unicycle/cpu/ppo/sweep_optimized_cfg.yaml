@@ -1,15 +1,16 @@
 environment:
   name: Unicycle-v0
-  num_envs: 3
-  normalized_rewards: False
+  num_envs: 4
+  normalized_rewards: false
   environment_kwargs:
-    normalized_actions: True
-    normalized_observations: True
-    dt: 0.004
-    T: 3
-    alpha_cost: 1.
-    alpha_action_cost: 1.
-    alpha_terminal_cost: 1.
+    nonlinear_cost: false
+    normalized_actions: true
+    normalized_observations: true
+    dt: 0.003
+    T: 3.
+    alpha_cost: 0.7943172533108552
+    alpha_action_cost: 0.7943172533108552
+    alpha_terminal_cost: 0.100055759278054514
 
 algorithm:
   name: PPO
@@ -20,14 +21,14 @@ algorithm:
     gae_lambda: 0.99
     ent_coef: 0.
     vf_coef: 0.5
-    normalize_advantage: False
-    max_grad_norm: 0.9216909281395821
-    learning_rate: 0.00036558379071618247
+    normalize_advantage: false
+    max_grad_norm: 3.9026820401600846
+    learning_rate: 0.0001545964004973694
     learning_rate_schedule:
       type: lin
-    n_steps: 281
-    n_epochs: 7
-    batch_size: 843
+    n_steps: 1591
+    n_epochs: 8
+    batch_size: 3182
     clip_range: 0.2
 
 policy:
@@ -38,5 +39,5 @@ policy:
       vf: [256, 256, 256]
     activation_fn: relu
     optimizer_class: rmsprop
-    log_std_init: -2.067521056483639
+    log_std_init: -2.4935025778106783
     ortho_init: true
