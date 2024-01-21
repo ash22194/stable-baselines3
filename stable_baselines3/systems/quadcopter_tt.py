@@ -6,6 +6,7 @@ import meshcat
 import scipy.spatial.transform as transfm
 from scipy.io import loadmat
 from scipy.interpolate import interp1d
+from ipdb import set_trace
 
 class QuadcopterTT(gym.Env):
 	"""Custom Environment that follows gym interface"""
@@ -51,9 +52,9 @@ class QuadcopterTT(gym.Env):
 		self.reference_trajectory = trajectory
 
 		self.x_sample_limits = trajectory[:,0:1] + sys['x_sample_limits'] # reset within these limits
-		self.x_bounds = sys['x_bounds']
-		self.x_bounds[:,0] = self.x_bounds[:,0] + np.min(trajectory, axis=1) 
-		self.x_bounds[:,1] = self.x_bounds[:,1] + np.max(trajectory, axis=1) 
+		self.x_bounds = np.zeros(sys['x_bounds'].shape)
+		self.x_bounds[:,0] = sys['x_bounds'][:,0] + np.min(trajectory, axis=1) 
+		self.x_bounds[:,1] = sys['x_bounds'][:,1] + np.max(trajectory, axis=1) 
 
 		self.u_limits = sys['u_limits']
 		self.Q = sys['Q']
