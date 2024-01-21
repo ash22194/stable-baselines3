@@ -9,8 +9,8 @@ environment:
     reference_trajectory_horizon: 0.5
     normalized_actions: true
     normalized_observations: true
-    alpha_cost: 5
-    alpha_terminal_cost: 0
+    alpha_cost: 1
+    alpha_terminal_cost: 1
 
 algorithm:
   name: PPO
