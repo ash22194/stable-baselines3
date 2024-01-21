@@ -27,8 +27,8 @@ algorithm:
     learning_rate_schedule: 
       type: 'lin'
     n_steps: 320
-    n_epochs: 1
-    batch_size: 0.5
+    n_epochs: 7
+    batch_size: null
     clip_range: 0.2
 
 policy:
@@ -39,5 +39,5 @@ policy:
       vf: [256, 256, 256]
     activation_fn: 'relu'
     optimizer_class: 'rmsprop'
-    log_std_init: -2.3
+    log_std_init: -2.067521056483639
     ortho_init: True
