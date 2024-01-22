@@ -5,20 +5,10 @@ criteria:
 environment:
   num_envs:
     type: 'int'
-    low: 20
-    high: 100
-  
-  dt:
-    type: 'categorical'
-    choices: [0.002, 0.003, 0.004]
+    low: 100
+    high: 500
 
 algorithm:
-  gamma:
-    type: 'float'
-    low: 0.99
-    high: 0.9999
-    log: True
-
   gae_lambda:
     type: 'float'
     low: 0
@@ -41,15 +31,18 @@ algorithm:
     high: 0.001
     log: True
   
-  max_grad_norm:
-    type: 'float'
-    low: 0.1
-    high: 5
+  learning_rate_schedule:
+    type: 'categorical'
+    choices:
+      - type: 'lin'
+      - type: 'kla'
+        target_kl: 0.1
   
-  clip_range:
+  ent_coef:
     type: 'float'
-    low: 0.05
-    high: 0.5
+    low: 0.000001
+    high: 0.01
+    log: True
 
 policy:
   log_std_init:
