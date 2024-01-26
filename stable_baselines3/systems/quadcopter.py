@@ -9,12 +9,12 @@ class Quadcopter(gym.Env):
 	metadata = {'render_modes': ['human']}
 
 	def __init__(
-		self, sys=dict(), dt=1e-3, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_terminal_cost=1.):
+		self, param=dict(), dt=1e-3, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_terminal_cost=1.):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
 		m = 0.5
 		g = 9.81
-		sys_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
+		param_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
 				# 'Q': 0.85*np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': 0.085*np.diag([0.002, 0.001, 0.001, 0.004]),\
 				'Q': np.diag([1, 0, 0, 1, 1, 1, 0.01, 0.1, 0.1, 0.01]), 'R': 0.02*np.diag([0.002, 0.001, 0.001, 0.004]),\
 				'QT': np.eye(10),\
@@ -22,36 +22,36 @@ class Quadcopter(gym.Env):
 				'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,\
 				'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.]]),\
 				'x_bounds': np.array([[-10., 10.], [-10., 10.], [0., 2.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.]]),\
-				'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.175*m*g, 0.175*m*g]])
+				'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.7*m*g, 0.7*m*g]])
 				}
-		sys_.update(sys)
-		sys_.update({'dt':dt})
-		sys_['gamma_'] = np.exp(-sys_['lambda_']*sys_['dt'])
-		sys.update(sys_)
+		param_.update(param)
+		param_.update({'dt':dt})
+		param_['gamma_'] = np.exp(-param_['lambda_']*param_['dt'])
+		param.update(param_)
 
-		self.X_DIMS = sys['X_DIMS'] # dimension of observations
+		self.X_DIMS = param['X_DIMS'] # dimension of observations
 		self.independent_sampling_dims = np.arange(self.X_DIMS)
 		self.observation_dims = np.arange(10) + 2 # drop the xy co-ordinate in the observation
-		self.U_DIMS = sys['U_DIMS']
-		self.goal = sys['goal']
-		self.u0 = sys['u0']
-		self.T = sys['T']
-		self.dt = sys['dt']
+		self.U_DIMS = param['U_DIMS']
+		self.goal = param['goal']
+		self.u0 = param['u0']
+		self.T = param['T']
+		self.dt = param['dt']
 		self.horizon = round(self.T / self.dt)
-		self.x_sample_limits = sys['x_sample_limits'] # reset within these limits
-		self.x_bounds = sys['x_bounds']
-		self.u_limits = sys['u_limits']
-		self.Q = sys['Q']
-		self.QT = sys['QT']
-		self.R = sys['R']
-		self.gamma_ = sys['gamma_']
-		self.lambda_ = sys['lambda_']
+		self.x_sample_limits = param['x_sample_limits'] # reset within these limits
+		self.x_bounds = param['x_bounds']
+		self.u_limits = param['u_limits']
+		self.Q = param['Q']
+		self.QT = param['QT']
+		self.R = param['R']
+		self.gamma_ = param['gamma_']
+		self.lambda_ = param['lambda_']
 
-		self.m = sys['m']
-		self.l = sys['l']
-		self.g = sys['g']
-		self.bk = sys['bk']
-		self.I = sys['I']
+		self.m = param['m']
+		self.l = param['l']
+		self.g = param['g']
+		self.bk = param['bk']
+		self.I = param['I']
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
 		self.alpha_cost = alpha_cost

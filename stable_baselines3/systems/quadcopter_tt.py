@@ -6,41 +6,40 @@ import meshcat
 import scipy.spatial.transform as transfm
 from scipy.io import loadmat
 from scipy.interpolate import interp1d
-from ipdb import set_trace
 
 class QuadcopterTT(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
 	def __init__(
-		self, trajectory_file, sys=dict(), dt=1e-3, fixed_starts=False, reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_terminal_cost=1.):
+		self, trajectory_file, param=dict(), dt=1e-3, fixed_starts=False, reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_terminal_cost=1.):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
 		m = 0.5
 		g = 9.81
-		sys_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),
+		param_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),
 			# 'Q': np.diag([1, 1, 0.1, 0, 0, 0.1, 0.01, 0.01, 0.001, 0.001, 0.001, 0.0001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
 			'Q': np.diag([1, 1, 1, 0, 0, 1, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
 			'u0': np.array([[m*g], [0.], [0.], [0.]]), 'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,
-			'x_sample_limits': np.array([[-0.1, 0.1], [-0.1, 0.1], [-0.1, 0.1], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-0.5, 0.5], [-0.5, 0.5], [-0.5, 0.5], [-0.5, 0.5], [-0.5, 0.5], [-0.5, 0.5]]),
+			'x_sample_limits': np.array([[-0.25, 0.25], [-0.25, 0.25], [-0.25, 0.25], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25]]),
 			'x_bounds': np.array([[-5., 5.], [-5., 5.], [-5, 5.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.]]),
-			'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.175*m*g, 0.175*m*g]])
+			'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.7*m*g, 0.7*m*g]])
 		}
-		sys_.update(sys)
-		sys_.update({'dt':dt})
-		sys_['gamma_'] = np.exp(-sys_['lambda_']*sys_['dt'])
-		sys.update(sys_)
+		param_.update(param)
+		param_.update({'dt':dt})
+		param_['gamma_'] = np.exp(-param_['lambda_']*param_['dt'])
+		param.update(param_)
 
-		self.X_DIMS = sys['X_DIMS'] # dimension of observations
+		self.X_DIMS = param['X_DIMS'] # dimension of observations
 		self.independent_sampling_dims = np.arange(self.X_DIMS)
 		self.observation_dims = np.arange(self.X_DIMS)
 		self.cost_dims = np.arange(self.X_DIMS)
 		self.tracking_dims = np.array([0,1,2,3,4,5])
-		self.U_DIMS = sys['U_DIMS']
+		self.U_DIMS = param['U_DIMS']
 
-		self.u0 = sys['u0']
-		self.T = sys['T']
-		self.dt = sys['dt']
+		self.u0 = param['u0']
+		self.T = param['T']
+		self.dt = param['dt']
 		self.horizon = round(self.T / self.dt)
 
 		assert trajectory_file.endswith('.mat'), 'Trajectory file must be a .mat'
@@ -51,23 +50,23 @@ class QuadcopterTT(gym.Env):
 		self.reference_trajectory_horizon = int(reference_trajectory_horizon/self.T*trajectory.shape[1])
 		self.reference_trajectory = trajectory
 
-		self.x_sample_limits = trajectory[:,0:1] + sys['x_sample_limits'] # reset within these limits
-		self.x_bounds = np.zeros(sys['x_bounds'].shape)
-		self.x_bounds[:,0] = sys['x_bounds'][:,0] + np.min(trajectory, axis=1) 
-		self.x_bounds[:,1] = sys['x_bounds'][:,1] + np.max(trajectory, axis=1) 
+		self.x_sample_limits = trajectory[:,0:1] + param['x_sample_limits'] # reset within these limits
+		self.x_bounds = np.zeros(param['x_bounds'].shape)
+		self.x_bounds[:,0] = param['x_bounds'][:,0] + np.min(trajectory, axis=1) 
+		self.x_bounds[:,1] = param['x_bounds'][:,1] + np.max(trajectory, axis=1) 
 
-		self.u_limits = sys['u_limits']
-		self.Q = sys['Q']
-		self.QT = sys['QT']
-		self.R = sys['R']
-		self.gamma_ = sys['gamma_']
-		self.lambda_ = sys['lambda_']
+		self.u_limits = param['u_limits']
+		self.Q = param['Q']
+		self.QT = param['QT']
+		self.R = param['R']
+		self.gamma_ = param['gamma_']
+		self.lambda_ = param['lambda_']
 
-		self.m = sys['m']
-		self.l = sys['l']
-		self.g = sys['g']
-		self.bk = sys['bk']
-		self.I = sys['I']
+		self.m = param['m']
+		self.l = param['l']
+		self.g = param['g']
+		self.bk = param['bk']
+		self.I = param['I']
 		self.fixed_starts = fixed_starts
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations

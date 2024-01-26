@@ -38,7 +38,7 @@ class GPUUnicycle:
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, device='cpu', num_envs=1, sys=dict(), dt=1e-3, T=2., normalized_actions=True, normalized_observations=True, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
+	def __init__(self, device='cpu', num_envs=1, param=dict(), dt=1e-3, T=2., normalized_actions=True, normalized_observations=True, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Unicycle, self).__init__()
 		# Define model paramters
 		mw = 0.5
@@ -54,7 +54,7 @@ class GPUUnicycle:
 		goal = np.zeros((16, 1)) # full dims, not all may be relevant
 		goal[14,0] = 20
 
-		sys_ = {'mw': mw, 'mf': mf, 'md': md, 'rw': rw, 'rf': rf, 'rd': rd, \
+		param_ = {'mw': mw, 'mf': mf, 'md': md, 'rw': rw, 'rf': rf, 'rd': rd, \
 			'Iw': np.diag([mw*(rw**2 + 0.04**2)/5, 2*mw*(rw**2)/5, mw*(rw**2 + 0.04**2)/5]),\
 			'If': np.diag([mf*(frame_length**2 + 0.08**2)/12, mf*(frame_length**2 + 0.08**2)/12, 2*mf*(0.08**2)/12]),\
 			'Id': np.diag([md*(upper_body_length**2 + 0.08**2)/12, md*(upper_body_length**2 + 0.08**2)/12, 2*md*(0.08**2)/12]),\
@@ -66,46 +66,46 @@ class GPUUnicycle:
 			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-1., 1.], [-1., 1.], [-1., 1.], [15., 25.], [-1., 1.]]),\
 			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/3, np.pi/3], [-np.pi/3, np.pi/3], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [5., 35.], [-8., 8.]]),\
 			'u_limits': np.array([[-15., 15.], [-15., 15.]])}
-		sys_.update(sys)
-		sys_.update({'dt':dt, 'T':T})
-		sys_['lambda_'] = (1. - sys_['gamma_']) / sys_['dt']
-		sys.update(sys_)
+		param_.update(param)
+		param_.update({'dt':dt, 'T':T})
+		param_['lambda_'] = (1. - param_['gamma_']) / param_['dt']
+		param.update(param_)
 		self.device = device
 		self.np_dtype = np.float32
 		self.th_dtype = th.float32
 		self.num_envs = num_envs
 
-		self.X_DIMS = sys['X_DIMS'] # dimension of observations
+		self.X_DIMS = param['X_DIMS'] # dimension of observations
 		self.independent_dims = np.array([3,4,5,6,7,11,12,13,14,15]) # the same length as x_sample_limits
 		self.observation_dims = np.array([3,4,5,7,11,12,13,14,15])
 		self.cost_dims = np.array([4,5,7,11,12,13,14,15])
-		self.U_DIMS = sys['U_DIMS']
-		self.goal = sys['goal']
-		self.u0 = sys['u0']
-		self.T = sys['T']
-		self.dt = sys['dt']
+		self.U_DIMS = param['U_DIMS']
+		self.goal = param['goal']
+		self.u0 = param['u0']
+		self.T = param['T']
+		self.dt = param['dt']
 		self.horizon = round(self.T / self.dt)
-		self.x_sample_limits = sys['x_sample_limits'] # reset within these limits
-		self.x_bounds = sys['x_bounds']
-		self.u_limits = sys['u_limits']
-		self.Q = sys['Q']
-		self.QT = sys['QT']
-		self.R = sys['R']
-		self.gamma_ = sys['gamma_']
-		self.lambda_ = sys['lambda_']
+		self.x_sample_limits = param['x_sample_limits'] # reset within these limits
+		self.x_bounds = param['x_bounds']
+		self.u_limits = param['u_limits']
+		self.Q = param['Q']
+		self.QT = param['QT']
+		self.R = param['R']
+		self.gamma_ = param['gamma_']
+		self.lambda_ = param['lambda_']
 
-		self.md = sys['md']
-		self.mf = sys['mf']
-		self.mw = sys['mw']
-		self.rd = sys['rd']
-		self.rf = sys['rf']
-		self.rw = sys['rw']
-		self.Id = sys['Id']
-		self.If = sys['If']
-		self.Iw = sys['Iw']
-		self.g = sys['g']
-		self.alpha = sys['alpha']
-		self.fcoeff = sys['fcoeff']
+		self.md = param['md']
+		self.mf = param['mf']
+		self.mw = param['mw']
+		self.rd = param['rd']
+		self.rf = param['rf']
+		self.rw = param['rw']
+		self.Id = param['Id']
+		self.If = param['If']
+		self.Iw = param['Iw']
+		self.g = param['g']
+		self.alpha = param['alpha']
+		self.fcoeff = param['fcoeff']
 		self.baumgarte_factor = 10
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
@@ -145,16 +145,16 @@ class GPUUnicycle:
 			target_obs_range = obs_bounds_range
 		
 		# Create tensor copies of relevant numpy arrays
-		self.th_x_bounds = th.asarray(sys['x_bounds'], device=device, dtype=self.th_dtype)
-		self.th_u_limits = th.asarray(sys['u_limits'], device=device, dtype=self.th_dtype)
-		self.th_Q = th.asarray(sys['Q'], device=device, dtype=self.th_dtype)
-		self.th_QT = th.asarray(sys['QT'], device=device, dtype=self.th_dtype)
-		self.th_goal = th.asarray(sys['goal'][:,0], device=device, dtype=self.th_dtype)
-		self.th_R = th.asarray(sys['R'], device=device, dtype=self.th_dtype)
-		self.th_u0 = th.asarray(sys['u0'][:,0], device=device, dtype=self.th_dtype)
+		self.th_x_bounds = th.asarray(param['x_bounds'], device=device, dtype=self.th_dtype)
+		self.th_u_limits = th.asarray(param['u_limits'], device=device, dtype=self.th_dtype)
+		self.th_Q = th.asarray(param['Q'], device=device, dtype=self.th_dtype)
+		self.th_QT = th.asarray(param['QT'], device=device, dtype=self.th_dtype)
+		self.th_goal = th.asarray(param['goal'][:,0], device=device, dtype=self.th_dtype)
+		self.th_R = th.asarray(param['R'], device=device, dtype=self.th_dtype)
+		self.th_u0 = th.asarray(param['u0'][:,0], device=device, dtype=self.th_dtype)
 
-		self.th_x_sample_limits_mid = th.asarray(0.5*(sys['x_sample_limits'][:,0] + sys['x_sample_limits'][:,1]), device=device, dtype=self.th_dtype)
-		self.th_x_sample_limits_range = th.asarray((sys['x_sample_limits'][:,1] - sys['x_sample_limits'][:,0]), device=device, dtype=self.th_dtype)
+		self.th_x_sample_limits_mid = th.asarray(0.5*(param['x_sample_limits'][:,0] + param['x_sample_limits'][:,1]), device=device, dtype=self.th_dtype)
+		self.th_x_sample_limits_range = th.asarray((param['x_sample_limits'][:,1] - param['x_sample_limits'][:,0]), device=device, dtype=self.th_dtype)
 		self.th_obs_bounds_mid = th.asarray(obs_bounds_mid, device=device, dtype=self.th_dtype)
 		self.th_obs_bounds_range = th.asarray(obs_bounds_range, device=device, dtype=self.th_dtype)
 		self.th_target_obs_mid = th.asarray(target_obs_mid, device=device, dtype=self.th_dtype)

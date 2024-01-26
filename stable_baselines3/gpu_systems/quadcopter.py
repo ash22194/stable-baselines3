@@ -8,12 +8,12 @@ class GPUQuadcopter:
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, device='cpu', num_envs=1, sys=dict(), dt=1e-3, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_terminal_cost=1.):
+	def __init__(self, device='cpu', num_envs=1, param=dict(), dt=1e-3, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_terminal_cost=1.):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
 		m = 0.5
 		g = 9.81
-		sys_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
+		param_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
 				# 'Q': 0.85*np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': 0.085*np.diag([0.002, 0.001, 0.001, 0.004]),\
 				'Q': np.diag([1, 0, 0, 1, 1, 1, 0.01, 0.1, 0.1, 0.01]), 'R': 0.02*np.diag([0.002, 0.001, 0.001, 0.004]),\
 				'QT': np.eye(10),\
@@ -21,40 +21,40 @@ class GPUQuadcopter:
 				'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,\
 				'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.]]),\
 				'x_bounds': np.array([[-10., 10.], [-10., 10.], [0., 2.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.]]),\
-				'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.175*m*g, 0.175*m*g]])
+				'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.7*m*g, 0.7*m*g]])
 				}
-		sys_.update(sys)
-		sys_.update({'dt':dt})
-		sys_['gamma_'] = np.exp(-sys_['lambda_']*sys_['dt'])
-		sys.update(sys_)
+		param_.update(param)
+		param_.update({'dt':dt})
+		param_['gamma_'] = np.exp(-param_['lambda_']*param_['dt'])
+		param.update(param_)
 		self.device = device
 		self.np_dtype = np.float32
 		self.th_dtype = th.float32
 		self.num_envs = num_envs
 
-		self.X_DIMS = sys['X_DIMS'] # dimension of observations
+		self.X_DIMS = param['X_DIMS'] # dimension of observations
 		self.independent_sampling_dims = np.arange(self.X_DIMS)
 		self.observation_dims = np.arange(10) + 2 # drop the xy co-ordinate in the observation
-		self.U_DIMS = sys['U_DIMS']
-		self.goal = sys['goal']
-		self.u0 = sys['u0']
-		self.T = sys['T']
-		self.dt = sys['dt']
+		self.U_DIMS = param['U_DIMS']
+		self.goal = param['goal']
+		self.u0 = param['u0']
+		self.T = param['T']
+		self.dt = param['dt']
 		self.horizon = round(self.T / self.dt)
-		self.x_sample_limits = sys['x_sample_limits'] # reset within these limits
-		self.x_bounds = sys['x_bounds']
-		self.u_limits = sys['u_limits']
-		self.Q = sys['Q']
-		self.QT = sys['QT']
-		self.R = sys['R']
-		self.gamma_ = sys['gamma_']
-		self.lambda_ = sys['lambda_']
+		self.x_sample_limits = param['x_sample_limits'] # reset within these limits
+		self.x_bounds = param['x_bounds']
+		self.u_limits = param['u_limits']
+		self.Q = param['Q']
+		self.QT = param['QT']
+		self.R = param['R']
+		self.gamma_ = param['gamma_']
+		self.lambda_ = param['lambda_']
 
-		self.m = sys['m']
-		self.l = sys['l']
-		self.g = sys['g']
-		self.bk = sys['bk']
-		self.I = sys['I']
+		self.m = param['m']
+		self.l = param['l']
+		self.g = param['g']
+		self.bk = param['bk']
+		self.I = param['I']
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
 		self.alpha_cost = alpha_cost
@@ -91,16 +91,16 @@ class GPUQuadcopter:
 			target_obs_range = obs_bounds_range
 		
 		# Create tensor copies of relevant numpy arrays
-		self.th_x_bounds = th.asarray(sys['x_bounds'], device=device, dtype=self.th_dtype)
-		self.th_u_limits = th.asarray(sys['u_limits'], device=device, dtype=self.th_dtype)
-		self.th_Q = th.asarray(sys['Q'], device=device, dtype=self.th_dtype)
-		self.th_QT = th.asarray(sys['QT'], device=device, dtype=self.th_dtype)
-		self.th_goal = th.asarray(sys['goal'][:,0], device=device, dtype=self.th_dtype)
-		self.th_R = th.asarray(sys['R'], device=device, dtype=self.th_dtype)
-		self.th_u0 = th.asarray(sys['u0'][:,0], device=device, dtype=self.th_dtype)
+		self.th_x_bounds = th.asarray(param['x_bounds'], device=device, dtype=self.th_dtype)
+		self.th_u_limits = th.asarray(param['u_limits'], device=device, dtype=self.th_dtype)
+		self.th_Q = th.asarray(param['Q'], device=device, dtype=self.th_dtype)
+		self.th_QT = th.asarray(param['QT'], device=device, dtype=self.th_dtype)
+		self.th_goal = th.asarray(param['goal'][:,0], device=device, dtype=self.th_dtype)
+		self.th_R = th.asarray(param['R'], device=device, dtype=self.th_dtype)
+		self.th_u0 = th.asarray(param['u0'][:,0], device=device, dtype=self.th_dtype)
 
-		self.th_x_sample_limits_mid = th.asarray(0.5*(sys['x_sample_limits'][:,0] + sys['x_sample_limits'][:,1]), device=device, dtype=self.th_dtype)
-		self.th_x_sample_limits_range = th.asarray((sys['x_sample_limits'][:,1] - sys['x_sample_limits'][:,0]), device=device, dtype=self.th_dtype)
+		self.th_x_sample_limits_mid = th.asarray(0.5*(param['x_sample_limits'][:,0] + param['x_sample_limits'][:,1]), device=device, dtype=self.th_dtype)
+		self.th_x_sample_limits_range = th.asarray((param['x_sample_limits'][:,1] - param['x_sample_limits'][:,0]), device=device, dtype=self.th_dtype)
 		self.th_obs_bounds_mid = th.asarray(obs_bounds_mid, device=device, dtype=self.th_dtype)
 		self.th_obs_bounds_range = th.asarray(obs_bounds_range, device=device, dtype=self.th_dtype)
 		self.th_target_obs_mid = th.asarray(target_obs_mid, device=device, dtype=self.th_dtype)

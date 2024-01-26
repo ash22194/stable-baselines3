@@ -9,7 +9,7 @@ class Unicycle(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, sys=dict(), dt=1e-3, T=2., normalized_actions=True, normalized_observations=False, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
+	def __init__(self, param=dict(), dt=1e-3, T=2., normalized_actions=True, normalized_observations=False, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Unicycle, self).__init__()
 		# Define model paramters
 		mw = 0.5
@@ -25,7 +25,7 @@ class Unicycle(gym.Env):
 		goal = np.zeros((16, 1)) # full dims, not all may be relevant
 		goal[14,0] = 20
 
-		sys_ = {'mw': mw, 'mf': mf, 'md': md, 'rw': rw, 'rf': rf, 'rd': rd, \
+		param_ = {'mw': mw, 'mf': mf, 'md': md, 'rw': rw, 'rf': rf, 'rd': rd, \
 			'Iw': np.diag([mw*(rw**2 + 0.04**2)/5, 2*mw*(rw**2)/5, mw*(rw**2 + 0.04**2)/5]),\
 			'If': np.diag([mf*(frame_length**2 + 0.08**2)/12, mf*(frame_length**2 + 0.08**2)/12, 2*mf*(0.08**2)/12]),\
 			'Id': np.diag([md*(upper_body_length**2 + 0.08**2)/12, md*(upper_body_length**2 + 0.08**2)/12, 2*md*(0.08**2)/12]),\
@@ -38,43 +38,43 @@ class Unicycle(gym.Env):
 			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-1., 1.], [-1., 1.], [-1., 1.], [15., 25.], [-1., 1.]]),\
 			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/3, np.pi/3], [-np.pi/3, np.pi/3], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [5., 35.], [-8., 8.]]),\
 			'u_limits': np.array([[-15., 15.], [-15., 15.]])}
-		sys_.update(sys)
-		sys_.update({'dt':dt, 'T':T})
-		sys_['lambda_'] = (1. - sys_['gamma_']) / sys_['dt']
-		sys.update(sys_)
+		param_.update(param)
+		param_.update({'dt':dt, 'T':T})
+		param_['lambda_'] = (1. - param_['gamma_']) / param_['dt']
+		param.update(param_)
 
-		self.X_DIMS = sys['X_DIMS'] # dimension of observations
+		self.X_DIMS = param['X_DIMS'] # dimension of observations
 		self.independent_dims = np.array([3,4,5,6,7,11,12,13,14,15]) # the same length as x_sample_limits
 		self.observation_dims = np.array([3,4,5,7,11,12,13,14,15])
 		self.cost_dims = np.array([4,5,7,11,12,13,14,15])
-		self.U_DIMS = sys['U_DIMS']
-		self.goal = sys['goal']
-		self.u0 = sys['u0']
-		self.T = sys['T']
-		self.dt = sys['dt']
+		self.U_DIMS = param['U_DIMS']
+		self.goal = param['goal']
+		self.u0 = param['u0']
+		self.T = param['T']
+		self.dt = param['dt']
 		self.horizon = round(self.T / self.dt)
-		self.x_sample_limits = sys['x_sample_limits'] # reset within these limits
-		self.x_bounds = sys['x_bounds']
-		self.u_limits = sys['u_limits']
-		self.Q = sys['Q']
-		self.QT = sys['QT']
-		self.R = sys['R']
-		self.gamma_ = sys['gamma_']
-		self.lambda_ = sys['lambda_']
+		self.x_sample_limits = param['x_sample_limits'] # reset within these limits
+		self.x_bounds = param['x_bounds']
+		self.u_limits = param['u_limits']
+		self.Q = param['Q']
+		self.QT = param['QT']
+		self.R = param['R']
+		self.gamma_ = param['gamma_']
+		self.lambda_ = param['lambda_']
 
-		self.md = sys['md']
-		self.mf = sys['mf']
-		self.mw = sys['mw']
-		self.rd = sys['rd']
-		self.rf = sys['rf']
-		self.rw = sys['rw']
-		self.Id = sys['Id']
-		self.If = sys['If']
-		self.Iw = sys['Iw']
+		self.md = param['md']
+		self.mf = param['mf']
+		self.mw = param['mw']
+		self.rd = param['rd']
+		self.rf = param['rf']
+		self.rw = param['rw']
+		self.Id = param['Id']
+		self.If = param['If']
+		self.Iw = param['Iw']
 
-		self.g = sys['g']
-		self.alpha = sys['alpha']
-		self.fcoeff = sys['fcoeff']
+		self.g = param['g']
+		self.alpha = param['alpha']
+		self.fcoeff = param['fcoeff']
 		self.baumgarte_factor = 10
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations

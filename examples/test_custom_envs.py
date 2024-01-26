@@ -137,6 +137,7 @@ def main():
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--load_dir', type=str, default='', help='directory to load the model from')
+	parser.add_argument('--evaluate_lqr', default=False, action='store_true', help='compare against an lqr controller?')
 
 	args = parser.parse_args()
 	load_dir = args.load_dir
@@ -166,7 +167,8 @@ def main():
 		pass
 	test_env.gamma_ = model.gamma
 	_, _, _, starts = evaluate_model(model, test_env, num_episodes=10, print_outcomes=True)
-	evaluate_lqr_controller(starts, test_env, num_episodes=starts.shape[1], print_outcomes=True)
+	if (args.evaluate_lqr):
+		evaluate_lqr_controller(starts, test_env, num_episodes=starts.shape[1], print_outcomes=True)
 
 if __name__=='__main__':
 	main()
