@@ -161,7 +161,7 @@ class GPUQuadcopter:
 				done = th.ones(self.num_envs, device=self.device, dtype=bool)
 			num_done = th.sum(done)
 			if (num_done > 0):
-				step_count_new = 0*th.randint(low=0, high=self.horizon, size=(num_done,1), dtype=th.float32, device=self.device)
+				step_count_new = th.randint(low=0, high=self.horizon, size=(num_done,1), dtype=th.float32, device=self.device)
 				state_new = ((th.rand((num_done, self.independent_sampling_dims.shape[0]), device=self.device, dtype=self.th_dtype) - 0.5) * (self.th_x_sample_limits_range))
 				state_new = (((self.horizon - step_count_new) / self.horizon) * state_new)
 				state_new += self.th_x_sample_limits_mid 
