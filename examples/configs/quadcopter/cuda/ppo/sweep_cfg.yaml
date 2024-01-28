@@ -30,7 +30,14 @@ algorithm:
     low: 0.00001
     high: 0.001
     log: True
-
+  
+  learning_rate_schedule:
+    type: 'categorical'
+    choices:
+      - type: 'lin'
+      - type: 'kla'
+        target_kl: 0.1
+  
   ent_coef:
     type: 'float'
     low: 0.000001
