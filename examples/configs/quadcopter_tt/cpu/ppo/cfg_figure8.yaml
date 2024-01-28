@@ -3,13 +3,13 @@ environment:
   num_envs: 3
   normalized_rewards: false
   environment_kwargs:
-    trajectory_file: 'trajectory_loop.mat'
-    dt: 0.0025
+    trajectory_file: 'trajectory_figure8_wider.mat'
+    dt: 0.008
     param:
-      T: 4
-      max_thrust_factor: 3 
-    fixed_starts: true
-    reference_trajectory_horizon: 0.66
+      T: 6.
+      max_thrust_factor: 2
+    fixed_starts: false
+    reference_trajectory_horizon: 1.
     normalized_actions: true
     normalized_observations: true
     alpha_cost: 5.693
