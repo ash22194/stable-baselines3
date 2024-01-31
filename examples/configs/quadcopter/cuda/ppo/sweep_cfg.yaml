@@ -1,42 +1,33 @@
 criteria:
   type: 'final_err'
-  num_episodes: 20
+  num_episodes: 50
 
 environment:
   num_envs:
     type: 'int'
-    low: 100
-    high: 500
+    low: 500
+    high: 2000
+    log: True
 
 algorithm:
-  gae_lambda:
-    type: 'float'
-    low: 0
-    high: 1
-
   n_steps:
     type: 'int'
-    low: 30
-    high: 300
+    low: 20
+    high: 200
 
   n_epochs:
-    type: 'int'
-    low: 1
-    high: 20
-    log: True
+    type: 'categorical'
+    choices: [10, 15, 20]
+  
+  batch_size:
+    type: 'categorical'
+    choices: [0.01, 0.05, 0.1, 0.25]
   
   learning_rate:
     type: 'float'
     low: 0.00001
     high: 0.001
     log: True
-  
-  learning_rate_schedule:
-    type: 'categorical'
-    choices:
-      - type: 'lin'
-      - type: 'kla'
-        target_kl: 0.1
   
   ent_coef:
     type: 'float'
@@ -47,5 +38,5 @@ algorithm:
 policy:
   log_std_init:
     type: 'float'
-    low: -4
-    high: -2
+    low: -3
+    high: 0
