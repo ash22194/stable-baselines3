@@ -10,7 +10,7 @@ import gymnasium as gym
 import numpy as np
 from typing import Callable, Dict
 
-from stable_baselines3.gpu_systems import GPUQuadcopter, GPUUnicycle
+from stable_baselines3.gpu_systems import GPUQuadcopter, GPUQuadcopterTT, GPUUnicycle
 
 from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.callbacks import BaseCallback, CustomSaveLogCallback
@@ -104,6 +104,8 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 	if (env_device=='cuda'):
 		if (environment_args.get('name')=='GPUQuadcopter'):
 			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
+		elif (environment_args.get('name')=='GPUQuadcopterTT'):
+			env = GPUQuadcopterTT(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		elif (environment_args.get('name')=='GPUUnicycle'):
 			env = GPUUnicycle(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		else:

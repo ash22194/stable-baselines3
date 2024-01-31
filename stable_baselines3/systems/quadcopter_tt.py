@@ -12,7 +12,7 @@ class QuadcopterTT(gym.Env):
 	metadata = {'render_modes': ['human']}
 
 	def __init__(
-		self, trajectory_file, param=dict(), dt=1e-3, fixed_starts=False, reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
+		self, trajectory_file, param=dict(), fixed_starts=False, reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
 		m = 0.5
@@ -26,7 +26,6 @@ class QuadcopterTT(gym.Env):
 			'max_thrust_factor': 2
 		}
 		param_.update(param)
-		param_.update({'dt':dt})
 		param_['gamma_'] = np.exp(-param_['lambda_']*param_['dt'])
 		param.update(param_)
 
