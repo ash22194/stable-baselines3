@@ -9,6 +9,7 @@ from torch.nn import functional as F
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from stable_baselines3.common.policies import ActorCriticCnnPolicy, ActorCriticPolicy, BasePolicy, MultiInputActorCriticPolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
+from stable_baselines3.common.distributions import kl_divergence, make_proba_distribution
 from stable_baselines3.common.utils import explained_variance, get_schedule_fn, update_learning_rate
 from stable_baselines3.common.buffers import RolloutBuffer
 
@@ -197,6 +198,7 @@ class PPO(OnPolicyAlgorithm):
         # train for n_epochs epochs
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
+            exact_kl_divs = []
             # Do a complete pass on the rollout buffer
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 actions = rollout_data.actions
@@ -261,6 +263,13 @@ class PPO(OnPolicyAlgorithm):
                     log_ratio = log_prob - rollout_data.old_log_prob
                     approx_kl_div = th.mean((th.exp(log_ratio) - 1) - log_ratio).cpu().numpy()
                     approx_kl_divs.append(approx_kl_div)
+                    
+                    actions_distribution = (self.policy.get_distribution(rollout_data.observations))
+                    old_actions_distribution = make_proba_distribution(self.action_space, self.use_sde, dist_kwargs=self.policy.dist_kwargs)
+                    old_actions_distribution = (old_actions_distribution.proba_distribution(rollout_data.actions_mu, rollout_data.actions_log_std))
+
+                    exact_kl_div = th.mean(kl_divergence(old_actions_distribution, actions_distribution)).cpu().numpy()
+                    exact_kl_divs.append(exact_kl_div)
 
                 # if self.target_kl is not None and approx_kl_div > 1.5 * self.target_kl:
                 #     continue_training = False
@@ -292,6 +301,7 @@ class PPO(OnPolicyAlgorithm):
         self.logger.record("train/policy_gradient_loss", np.mean(pg_losses))
         self.logger.record("train/value_loss", np.mean(value_losses))
         self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
+        self.logger.record("train/exact_kl", np.mean(exact_kl_divs))
         self.logger.record("train/clip_fraction", np.mean(clip_fractions))
         self.logger.record("train/loss", loss.item())
         if type(self.rollout_buffer)==RolloutBuffer:

@@ -364,6 +364,8 @@ class RolloutBuffer(BaseBuffer):
 
     observations: np.ndarray
     actions: np.ndarray
+    actions_mu: np.ndarray
+    actions_log_std: np.ndarray
     rewards: np.ndarray
     advantages: np.ndarray
     returns: np.ndarray
@@ -390,6 +392,8 @@ class RolloutBuffer(BaseBuffer):
     def reset(self) -> None:
         self.observations = np.zeros((self.buffer_size, self.n_envs, *self.obs_shape), dtype=np.float32)
         self.actions = np.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32)
+        self.actions_mu = np.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32)
+        self.actions_log_std = np.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32)
         self.rewards = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.returns = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.episode_starts = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
@@ -440,6 +444,8 @@ class RolloutBuffer(BaseBuffer):
         self,
         obs: np.ndarray,
         action: np.ndarray,
+        action_mu: np.ndarray,
+        action_log_std: np.ndarray,
         reward: np.ndarray,
         episode_start: np.ndarray,
         value: th.Tensor,
@@ -469,6 +475,8 @@ class RolloutBuffer(BaseBuffer):
 
         self.observations[self.pos] = np.array(obs)
         self.actions[self.pos] = np.array(action)
+        self.actions_mu[self.pos] = np.array(action_mu)
+        self.actions_log_std[self.pos] = np.array(action_log_std)
         self.rewards[self.pos] = np.array(reward)
         self.episode_starts[self.pos] = np.array(episode_start)
         self.values[self.pos] = value.clone().cpu().numpy().flatten()
@@ -485,6 +493,8 @@ class RolloutBuffer(BaseBuffer):
             _tensor_names = [
                 "observations",
                 "actions",
+                "actions_mu",
+                "actions_log_std",
                 "values",
                 "log_probs",
                 "advantages",
@@ -512,6 +522,8 @@ class RolloutBuffer(BaseBuffer):
         data = (
             self.observations[batch_inds],
             self.actions[batch_inds],
+            self.actions_mu[batch_inds],
+            self.actions_log_std[batch_inds],
             self.values[batch_inds].flatten(),
             self.log_probs[batch_inds].flatten(),
             self.advantages[batch_inds].flatten(),
