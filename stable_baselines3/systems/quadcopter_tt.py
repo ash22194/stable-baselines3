@@ -12,18 +12,18 @@ class QuadcopterTT(gym.Env):
 	metadata = {'render_modes': ['human']}
 
 	def __init__(
-		self, trajectory_file, param=dict(), dt=1e-3, fixed_starts=False, reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_terminal_cost=1.):
+		self, trajectory_file, param=dict(), dt=1e-3, fixed_starts=False, reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
 		m = 0.5
 		g = 9.81
 		param_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),
 			# 'Q': np.diag([1, 1, 0.1, 0, 0, 0.1, 0.01, 0.01, 0.001, 0.001, 0.001, 0.0001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
-			'Q': np.diag([1, 1, 1, 0, 0, 1, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
+			'Q': np.diag([1, 1, 1, 0, 0, 1, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]), 'R': 0.1*np.diag([0.002, 0.01, 0.01, 0.004]), 'QT': 2*np.eye(12),
 			'u0': np.array([[m*g], [0.], [0.], [0.]]), 'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,
 			'x_sample_limits': np.array([[-0.25, 0.25], [-0.25, 0.25], [-0.25, 0.25], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25]]),
 			'x_bounds': np.array([[-5., 5.], [-5., 5.], [-5, 5.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.]]),
-			'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.7*m*g, 0.7*m*g]])
+			'max_thrust_factor': 2
 		}
 		param_.update(param)
 		param_.update({'dt':dt})
@@ -48,14 +48,19 @@ class QuadcopterTT(gym.Env):
 		trajectory_timestamps = np.linspace(0, self.horizon, trajectory.shape[1])
 		self.goal = interp1d(x=trajectory_timestamps, y=trajectory)
 		self.reference_trajectory_horizon = int(reference_trajectory_horizon/self.T*trajectory.shape[1])
-		self.reference_trajectory = trajectory
+		self.reference_trajectory = trajectory.copy()
 
-		self.x_sample_limits = trajectory[:,0:1] + param['x_sample_limits'] # reset within these limits
+		self.x_sample_limits = param['x_sample_limits'] # reset within these limits
 		self.x_bounds = np.zeros(param['x_bounds'].shape)
 		self.x_bounds[:,0] = param['x_bounds'][:,0] + np.min(trajectory, axis=1) 
 		self.x_bounds[:,1] = param['x_bounds'][:,1] + np.max(trajectory, axis=1) 
 
-		self.u_limits = param['u_limits']
+		self.u_limits = np.zeros((self.U_DIMS, 2))
+		max_thrust = param['max_thrust_factor']*m*g
+		self.u_limits[0,1] = max_thrust
+		self.u_limits[1,:] = np.array([-0.2*max_thrust, 0.2*max_thrust])
+		self.u_limits[2,:] = np.array([-0.2*max_thrust, 0.2*max_thrust])
+		self.u_limits[3,:] = np.array([-0.4*max_thrust, 0.4*max_thrust])
 		self.Q = param['Q']
 		self.QT = param['QT']
 		self.R = param['R']
@@ -71,7 +76,7 @@ class QuadcopterTT(gym.Env):
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
 		self.alpha_cost = alpha_cost
-		self.alpha_action_cost = alpha_cost
+		self.alpha_action_cost = alpha_action_cost
 		self.alpha_terminal_cost = alpha_terminal_cost
 		# self.reset()
 
@@ -94,6 +99,7 @@ class QuadcopterTT(gym.Env):
 		self.obs_bounds_range = np.concatenate((state_obs_bounds_range, np.array([time_obs_bounds_range]), trajectory_input_obs_bounds_range))			
 
 		print('Observation dimension :', self.obs_bounds_mid.shape)
+		print('X bounds :', self.x_bounds)
 
 		if (normalized_observations):
 			self.observation_space = spaces.Box(low=-1, high=1, shape=self.obs_bounds_mid.shape, dtype=np.float32)
@@ -142,16 +148,17 @@ class QuadcopterTT(gym.Env):
 
 	def reset(self, seed=None, options=None, state=None):
 		super().reset(seed=seed)
+		self.step_count = int(0*np.random.randint(low=0, high=self.horizon))
 		if (self.fixed_starts):
-			self.state = self.goal(0.)
+			self.state = self.goal(self.step_count)
 		else:
 			if (state is None):
-				self.state = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+				self.state = (self.horizon - self.step_count) / self.horizon * (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+				self.state += self.goal(self.step_count) + 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1])
 			else:
 				assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
 				self.state = state
 
-		self.step_count = 0
 		self.tracking_error = 0
 		self._update_tracking_error()
 		info = {'step_count' : self.step_count}

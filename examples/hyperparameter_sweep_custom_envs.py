@@ -108,6 +108,22 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str, env_devi
 		save_prefix=cfg['policy'].get('save_prefix', 'model')
 	)
 
+	# create test env and test set
+	test_env = gym.make(eval_envname, **cfg['environment'].get('environment_kwargs', dict()))
+	num_episodes = criteria.get('num_episodes', 20)
+	eval_metric = criteria.get('type', 'ep_discounted_reward')
+	if (not os.path.isfile(os.path.join(save_dir, 'test_starts.npy'))):
+		# sample initial states to be used for testing in all trials
+		# save sampled states in test_starts.npy for other trials to use
+		starts = []
+		for ssi in range(num_episodes):
+			test_env.reset()
+			starts += [test_env.state.copy()]
+			starts = np.array(starts)
+		np.save(os.path.join(save_dir, 'test_starts.npy'), starts, allow_pickle=False)
+	else:
+		starts = np.load(os.path.join(save_dir, 'test_starts.npy'), allow_pickle=False, mmap_mode=None)
+
 	# train the model
 	total_timesteps = cfg['algorithm']['total_timesteps']
 	model_load = model.num_timesteps > 0
@@ -121,12 +137,9 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str, env_devi
 		)
 
 	# evaluate the model
-	test_env = gym.make(eval_envname, **cfg['environment'].get('environment_kwargs', dict()))
-	num_episodes = criteria.get('num_episodes', 20)
-	ep_reward, ep_discounted_reward, final_err = evaluate_model(model, test_env, num_episodes)
-	eval_metric = criteria.get('type', 'ep_discounted_reward')
+	ep_reward, ep_discounted_reward, final_err = evaluate_model(model, test_env, num_episodes, starts)
 
-	print('Reporting ', eval_metric)
+	print('Reporting ', eval_metric, ' over %d episodes'%num_episodes)
 	if (eval_metric == 'ep_reward'):
 		return np.mean(ep_reward)
 	elif (eval_metric == 'ep_discounted_reward'):
@@ -224,13 +237,17 @@ def initialize_model(cfg: Dict, save_dir: str, env_device: str):
 
 	return model
 
-def evaluate_model(model, test_env: gym.Env, num_episodes: int):
+def evaluate_model(model, test_env: gym.Env, num_episodes: int, starts=None):
+	if (starts is not None):
+		num_episodes = starts.shape[0]
+	else:
+		starts = [None for ii in range(num_episodes)]
 	ep_reward = np.zeros(num_episodes)
 	ep_discounted_reward = np.zeros(num_episodes)
 	final_err = np.zeros(num_episodes)
 
 	for ee in range(num_episodes):
-		obs, _ = test_env.reset()
+		obs, _ = test_env.reset(state=starts[ee])
 		done = False
 		discount = 1
 		while (not done):
@@ -282,7 +299,14 @@ class PruneTrialCallback(BaseCallback):
 		# check if trial should be pruned
 		check_point_id = divmod(self.model.num_timesteps+1, self.eval_every_timestep)[0]
 		if (check_point_id > self.curr_check_point_id):
-			ep_reward, ep_discounted_reward, final_err = evaluate_model(self.model, self.eval_env, self.num_eval_episodes)
+			start_file = os.path.join(os.path.dirname(os.path.dirname(self.save_path)), 'test_starts.npy')
+			if (os.path.isfile(start_file)):
+				starts = np.load(start_file, allow_pickle=False, mmap_mode=None)
+				print('test_starts loaded successfully, found %d start samples!'%starts.shape[0])
+			else:
+				print('Unable to find start file!')
+				starts = None
+			ep_reward, ep_discounted_reward, final_err = evaluate_model(self.model, self.eval_env, self.num_eval_episodes, starts)
 			self.curr_check_point_id = check_point_id
 
 			print('Reporting ', self.eval_metric)
@@ -306,7 +330,8 @@ class PruneTrialCallback(BaseCallback):
 		pass
 
 	def _on_training_end(self) -> None:
-		pass
+		# save final model
+		self.model.save(os.path.join(self.save_path, self.save_prefix + '_final'))
 
 def main():
 
