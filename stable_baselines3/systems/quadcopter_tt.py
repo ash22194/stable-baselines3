@@ -377,6 +377,10 @@ class QuadcopterTT(gym.Env):
 		pose[:3,3] = self.state[:3]
 		pose[:3,:3] = transfm.Rotation.from_euler('yxz', [self.state[4], self.state[3], self.state[5]]).as_matrix()
 		self.viz['root'].set_transform(pose)
+		mid_point = int(self.reference_trajectory.shape[1] / 2.)
+		self.viz['root'].set_cam_pos([self.reference_trajectory[0, mid_point], self.reference_trajectory[1, mid_point]-3., self.reference_trajectory[2, mid_point]+2.])
+		self.viz['root'].set_cam_target([self.state[0], self.state[1], self.state[2]])
+		return self.viz['root'].get_image()
 
 	def close (self):
 		pass

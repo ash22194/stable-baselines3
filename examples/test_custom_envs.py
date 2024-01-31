@@ -12,26 +12,33 @@ from scipy.linalg import solve_discrete_are, expm
 from stable_baselines3 import A2CwReg, PPO
 from stable_baselines3.common.env_checker import check_env
 
-def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=False):
+def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=False, record=False):
 	ep_reward = np.zeros(num_episodes)
 	ep_discounted_reward = np.zeros(num_episodes)
 	final_err = np.zeros(num_episodes)
 	start_states = np.zeros((test_env.X_DIMS, num_episodes))
 
 	for ee in range(num_episodes):
+		if (os.path.isdir(record)):
+			current_record_dir = os.path.join(record, str(ee))
+			os.makedirs(current_record_dir, exist_ok=True)
 		obs, _ = test_env.reset()
 		start_states[:,ee] = test_env.state
 		start_obs = test_env.get_obs(normalized=False)
 		done = False
 		discount = 1
+		step_count = 0
 		while (not done):
 			action, _state = model.predict(obs, deterministic=True)
 			obs, reward, done, _, info = test_env.step(action)
-			test_env.render()
+			im = test_env.render()
+			if (os.path.isdir(record)):
+				im.save(os.path.join(current_record_dir, '%04d.png'%step_count))
 
 			ep_reward[ee] += reward
 			ep_discounted_reward[ee] += (discount*reward)
 			discount *= model.gamma
+			step_count += 1
 
 		end_obs = test_env.get_obs(normalized=False)
 		final_err[ee] = test_env.get_goal_dist()
@@ -47,7 +54,7 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=F
 
 	return ep_reward, ep_discounted_reward, final_err, start_states
 
-def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_outcomes=False):
+def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_outcomes=False, record=False):
 	
 	assert starts.shape[1]==num_episodes, 'Number of starts and number of episodes do not match'
 
@@ -100,11 +107,15 @@ def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_
 	ep_discounted_reward = np.zeros(num_episodes)
 	final_err = np.zeros(num_episodes)
 	for ee in range(num_episodes):
+		if (os.path.isdir(record)):
+			current_record_dir = os.path.join(record, 'lqr_%d'%ee)
+			os.makedirs(current_record_dir, exist_ok=True)
 		_, _ = test_env.reset(state=starts[:,ee])
 		obs = test_env.get_obs(normalized=False)
 		start_obs = deepcopy(obs)
 		done = False
 		discount = 1
+		step_count = 0
 		while (not done):
 			action = (u0 - K @ (obs[:test_env.observation_dims.shape[0]] - goal))
 			action = np.maximum(u_limits[:,0], np.minimum(u_limits[:,1], action))
@@ -113,11 +124,14 @@ def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_
 
 			_, reward, done, _, info = test_env.step(action)
 			obs = test_env.get_obs(normalized=False)
-			test_env.render()
+			im = test_env.render()
+			if (os.path.isdir(record)):
+				im.save(os.path.join(current_record_dir, '%04d.png'%step_count))
 
 			ep_reward[ee] += reward
 			ep_discounted_reward[ee] += (discount*reward)
 			discount *= gamma_
+			step_count += 1
 
 		end_obs = test_env.get_obs(normalized=False)
 		final_err[ee] = test_env.get_goal_dist()
@@ -137,10 +151,14 @@ def main():
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--load_dir', type=str, default='', help='directory to load the model from')
+	parser.add_argument('--record', default=False, action='store_true', help='record the rollouts?')
 	parser.add_argument('--evaluate_lqr', default=False, action='store_true', help='compare against an lqr controller?')
 
 	args = parser.parse_args()
 	load_dir = args.load_dir
+	record = args.record
+	if (record):
+		record = load_dir
 	files = [os.path.join(load_dir, f) for f in os.listdir(load_dir) if os.path.isfile(os.path.join(load_dir, f))]
 
 	zip_files = []
@@ -166,9 +184,9 @@ def main():
 	elif (cfg['algorithm']['name'] == 'A2C'):
 		pass
 	test_env.gamma_ = model.gamma
-	_, _, _, starts = evaluate_model(model, test_env, num_episodes=10, print_outcomes=True)
+	_, _, _, starts = evaluate_model(model, test_env, num_episodes=10, print_outcomes=True, record=record)
 	if (args.evaluate_lqr):
-		evaluate_lqr_controller(starts, test_env, num_episodes=starts.shape[1], print_outcomes=True)
+		evaluate_lqr_controller(starts, test_env, num_episodes=starts.shape[1], print_outcomes=True, record=record)
 
 if __name__=='__main__':
 	main()
