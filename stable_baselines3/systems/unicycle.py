@@ -23,7 +23,7 @@ class Unicycle(gym.Env):
 		upper_body_length = 0.4
 
 		goal = np.zeros((16, 1)) # full dims, not all may be relevant
-		goal[14,0] = 20
+		goal[14,0] = 10
 
 		param_ = {'mw': mw, 'mf': mf, 'md': md, 'rw': rw, 'rf': rf, 'rd': rd, \
 			'Iw': np.diag([mw*(rw**2 + 0.04**2)/5, 2*mw*(rw**2)/5, mw*(rw**2 + 0.04**2)/5]),\
@@ -31,12 +31,12 @@ class Unicycle(gym.Env):
 			'Id': np.diag([md*(upper_body_length**2 + 0.08**2)/12, md*(upper_body_length**2 + 0.08**2)/12, 2*md*(0.08**2)/12]),\
 			'alpha': -np.pi/2, 'g': 9.81, 'fcoeff': 0.05, 'T': 2, 'dt':1e-3, 'gamma_':0.9995, 'X_DIMS': 16, 'U_DIMS': 2,\
 			'goal': goal, 'u0': np.zeros((2,1)),\
-			'Q': np.diag([0.25, 1, 0.25, 0.025, 0.0025, 0.01, 0.0001, 0.01]), 'R': (np.eye(2) / 5000.), 'QT': 2*np.diag([1.,1.,1.,1.,1.,1.,1.,1.]),\
-			# 'Q': np.diag([0.25, 1, 0.025, 0.0025, 0.0001, 0.001, 0.0005, 0.0001]), 'R': (np.eye(2) / 5000.), 'QT': 2*np.diag([1.,1.,1.,2.,1.,1.,1.,2.]),\
-			# 'Q': np.diag([0.1,0.1, 0.0005,0.0005, 0.,0., 0.00025, 0.001]), 'R': (np.eye(2) / 5000.), 'QT': 10*np.eye(8), \
-			# 'Q': np.diag([1.,1., 0.001,0.001, 0.01,0.0001, 0.0025, 0.0005]), 'R': (np.eye(2) / 5000.), 'QT': 2*np.eye(8), \
-			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-1., 1.], [-1., 1.], [-1., 1.], [15., 25.], [-1., 1.]]),\
-			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/3, np.pi/3], [-np.pi/3, np.pi/3], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [5., 35.], [-8., 8.]]),\
+			# 'Q_quadratic': np.diag([0.25, 1, 0.25, 0.025, 0.0025, 0.01, 0.0001, 0.01]), 'R_quadratic': (np.eye(2) / 5000.), 'QT_quadratic': 2*np.diag([1.,1.,1.,1.,1.,1.,1.,1.]),\
+			'Q_quadratic': np.diag([0.25, 1, 0.025, 0.0025, 0.0001, 0.001, 0.0005, 0.0001]), 'R_quadratic': (np.eye(2) / 5000.), 'QT_quadratic': 2*np.diag([1.,1.,1.,1.,1.,1.,1.,1.]),\
+			# 'Q_nonlinear': np.diag([1.,1., 0.001,0.001, 0.01,0.0001, 0.0025, 0.0005]), 'R_nonlinear': (np.eye(2) / 5000.), 'QT_nonlinear': 2*np.eye(8), \
+			'Q_nonlinear': np.diag([1,0.25, 0.001,0.00025, 0.025,0.000025, 0.005, 0.0005]), 'R_nonlinear': (np.eye(2) / 5000.), 'QT_nonlinear': 2*np.eye(8), \
+			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-1., 1.], [-1., 1.], [-1., 1.], [5., 15.], [-1., 1.]]),\
+			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/2.5, np.pi/2.5], [-np.pi/2.5, np.pi/2.5], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [-5., 25.], [-8., 8.]]),\
 			'u_limits': np.array([[-15., 15.], [-15., 15.]])}
 		param_.update(param)
 		param_.update({'dt':dt, 'T':T})
@@ -56,9 +56,15 @@ class Unicycle(gym.Env):
 		self.x_sample_limits = param['x_sample_limits'] # reset within these limits
 		self.x_bounds = param['x_bounds']
 		self.u_limits = param['u_limits']
-		self.Q = param['Q']
-		self.QT = param['QT']
-		self.R = param['R']
+		self.nonlinear_cost = nonlinear_cost
+		if (nonlinear_cost):
+			self.Q = param['Q_nonlinear']
+			self.QT = param['QT_nonlinear']
+			self.R = param['R_nonlinear']
+		else:
+			self.Q = param['Q_quadratic']
+			self.QT = param['QT_quadratic']
+			self.R = param['R_quadratic']
 		self.gamma_ = param['gamma_']
 		self.lambda_ = param['lambda_']
 
@@ -78,7 +84,6 @@ class Unicycle(gym.Env):
 		self.baumgarte_factor = 10
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
-		self.nonlinear_cost = nonlinear_cost
 		self.alpha_cost = alpha_cost
 		# self.alpha_action_cost = alpha_action_cost
 		self.alpha_action_cost = alpha_cost
@@ -220,11 +225,12 @@ class Unicycle(gym.Env):
 		p_con = p_wheel + Rwheel @ np.array([self.rw*np.sin(x[5]+x[6]), 0., -self.rw*np.cos(x[5]+x[6])])
 		v_con = self._jacobian_contact_trace(x) @ x[8:16]
 
+		Ryaw = transfm.Rotation.from_euler('yxz', [0., 0., -x[3]]).as_matrix()
+		delta_com = Ryaw @ (p_com - p_con)
+		vdelta_com = Ryaw @ (v_com - v_con)
 		y = np.zeros(8)
-		y[0] = p_com[0] - p_con[0]
-		y[1] = p_com[1] - p_con[1]
-		y[2] = v_com[0] - v_con[0]
-		y[3] = v_com[1] - v_con[1]
+		y[:2] = delta_com[:2]
+		y[2:4] = vdelta_com[:2]
 		y[4] = x[7] - self.goal[7,0]
 		y[5] = x[15] - self.goal[15,0]
 		y[6] = x[11] - self.goal[11,0]

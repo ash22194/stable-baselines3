@@ -19,7 +19,7 @@ class QuadcopterTT(gym.Env):
 		g = 9.81
 		param_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),
 			# 'Q': np.diag([1, 1, 0.1, 0, 0, 0.1, 0.01, 0.01, 0.001, 0.001, 0.001, 0.0001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
-			'Q': np.diag([1, 1, 1, 0, 0.1, 1, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
+			'Q': np.diag([1, 1, 1, 0, 0, 1, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]), 'R': 0.1*np.diag([0.002, 0.01, 0.01, 0.004]), 'QT': 2*np.eye(12),
 			'u0': np.array([[m*g], [0.], [0.], [0.]]), 'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,
 			'x_sample_limits': np.array([[-0.25, 0.25], [-0.25, 0.25], [-0.25, 0.25], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25]]),
 			'x_bounds': np.array([[-5., 5.], [-5., 5.], [-5, 5.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.]]),
@@ -48,7 +48,7 @@ class QuadcopterTT(gym.Env):
 		trajectory_timestamps = np.linspace(0, self.horizon, trajectory.shape[1])
 		self.goal = interp1d(x=trajectory_timestamps, y=trajectory)
 		self.reference_trajectory_horizon = int(reference_trajectory_horizon/self.T*trajectory.shape[1])
-		self.reference_trajectory = trajectory
+		self.reference_trajectory = trajectory.copy()
 
 		self.x_sample_limits = param['x_sample_limits'] # reset within these limits
 		self.x_bounds = np.zeros(param['x_bounds'].shape)
@@ -99,6 +99,7 @@ class QuadcopterTT(gym.Env):
 		self.obs_bounds_range = np.concatenate((state_obs_bounds_range, np.array([time_obs_bounds_range]), trajectory_input_obs_bounds_range))			
 
 		print('Observation dimension :', self.obs_bounds_mid.shape)
+		print('X bounds :', self.x_bounds)
 
 		if (normalized_observations):
 			self.observation_space = spaces.Box(low=-1, high=1, shape=self.obs_bounds_mid.shape, dtype=np.float32)
