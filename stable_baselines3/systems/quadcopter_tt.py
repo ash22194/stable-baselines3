@@ -19,7 +19,7 @@ class QuadcopterTT(gym.Env):
 		g = 9.81
 		param_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),
 			# 'Q': np.diag([1, 1, 0.1, 0, 0, 0.1, 0.01, 0.01, 0.001, 0.001, 0.001, 0.0001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
-			'Q': np.diag([1, 1, 1, 0, 0, 1, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]), 'R': 0.1*np.diag([0.002, 0.01, 0.01, 0.004]), 'QT': 2*np.eye(12),
+			'Q': np.diag([1, 1, 1, 0, 0, 1, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
 			'u0': np.array([[m*g], [0.], [0.], [0.]]), 'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,
 			'x_sample_limits': np.array([[-0.25, 0.25], [-0.25, 0.25], [-0.25, 0.25], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25]]),
 			'x_bounds': np.array([[-5., 5.], [-5., 5.], [-5, 5.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.]]),
@@ -44,8 +44,6 @@ class QuadcopterTT(gym.Env):
 		assert trajectory_file.endswith('.mat'), 'Trajectory file must be a .mat'
 		trajectory_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), 'examples/configs/quadcopter_tt/trajectories', trajectory_file)
 		trajectory = loadmat(trajectory_file)['trajectory']
-		trajectory_timestamps = np.linspace(0, self.horizon, trajectory.shape[1])
-		self.goal = interp1d(x=trajectory_timestamps, y=trajectory)
 		self.reference_trajectory_horizon = int(reference_trajectory_horizon/self.T*trajectory.shape[1])
 		self.reference_trajectory = trajectory.copy()
 
@@ -149,11 +147,11 @@ class QuadcopterTT(gym.Env):
 		super().reset(seed=seed)
 		self.step_count = int(0*np.random.randint(low=0, high=self.horizon))
 		if (self.fixed_starts):
-			self.state = self.goal(self.step_count)
+			self.state = self._interp_goal(self.step_count)
 		else:
 			if (state is None):
 				self.state = (self.horizon - self.step_count) / self.horizon * (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
-				self.state += self.goal(self.step_count) + 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1])
+				self.state += self._interp_goal(self.step_count) + 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1])
 			else:
 				assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
 				self.state = state
@@ -183,15 +181,22 @@ class QuadcopterTT(gym.Env):
 	def get_goal_dist(self):
 		return self.tracking_error
 	
+	def _interp_goal(self, step_count):
+		ref_step_count = step_count / self.horizon * (self.reference_trajectory.shape[1] - 1)
+		lower_id = int(np.minimum(np.floor(ref_step_count), self.reference_trajectory.shape[1] - 1))
+		higher_id = int(np.minimum(lower_id+1, self.reference_trajectory.shape[1] - 1))
+
+		return (self.reference_trajectory[:,lower_id] + (self.reference_trajectory[:,higher_id] - self.reference_trajectory[:,lower_id])*(ref_step_count - lower_id))
+
 	def _update_tracking_error(self):
 		x = self.state[:,np.newaxis]
-		goal_t = self.goal(self.step_count)[:,np.newaxis]
+		goal_t = self._interp_goal(self.step_count)[:,np.newaxis]
 		y = (x - goal_t)[self.tracking_dims,:]
 		self.tracking_error += np.linalg.norm(y)
 
 	def _get_cost(self, action, state_): #TODO
 		x = self.state[:,np.newaxis]
-		goal_t = self.goal(self.step_count)[:,np.newaxis]
+		goal_t = self._interp_goal(self.step_count)[:,np.newaxis]
 		y = (x - goal_t)[self.cost_dims,:]
 
 		a = action[:,np.newaxis]
@@ -203,9 +208,9 @@ class QuadcopterTT(gym.Env):
 
 		return cost, reached_goal
 
-	def _get_terminal_cost(self): #TODO
+	def _get_terminal_cost(self):
 		x = self.state[:,np.newaxis]
-		goal_t = self.goal(self.horizon)[:,np.newaxis]
+		goal_t = self._interp_goal(self.horizon)[:,np.newaxis]
 		y = (x - goal_t)[self.cost_dims,:]
 
 		cost = np.sum(y * (self.QT @ y)) * self.alpha_terminal_cost

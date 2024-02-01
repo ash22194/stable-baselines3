@@ -44,7 +44,6 @@ class GPUQuadcopterTT:
 		assert trajectory_file.endswith('.mat'), 'Trajectory file must be a .mat'
 		trajectory_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), 'examples/configs/quadcopter_tt/trajectories', trajectory_file)
 		trajectory = loadmat(trajectory_file)['trajectory']
-		trajectory_timestamps = np.linspace(0, self.horizon, trajectory.shape[1])
 		self.reference_trajectory = trajectory.copy()
 		self.reference_trajectory_horizon = int(reference_trajectory_horizon/self.T*trajectory.shape[1])
 
@@ -220,8 +219,9 @@ class GPUQuadcopterTT:
 		self.obs[:,(self.observation_dims.shape[0]+1):] = th.reshape(delta_reference, (self.num_envs, self.X_DIMS*self.reference_trajectory_horizon))
 
 	def _interp_goal(self, step_count):
-		ref_step_count = step_count / self.horizon * self.th_reference_trajectory.shape[1]
+		ref_step_count = step_count / self.horizon * (self.th_reference_trajectory.shape[1]-1)
 		lower_id = th.as_tensor(th.floor(ref_step_count), device=self.device, dtype=th.int)
+		lower_id = th.minimum(lower_id, th.as_tensor([self.th_reference_trajectory.shape[1]-1], device=self.device, dtype=th.int))
 		higher_id = th.minimum(lower_id+1, th.as_tensor([self.th_reference_trajectory.shape[1]-1], device=self.device, dtype=th.int))
 
 		return th.transpose(self.th_reference_trajectory[:,lower_id] + (self.th_reference_trajectory[:,higher_id] - self.th_reference_trajectory[:,lower_id])*(ref_step_count - lower_id), 0, 1)
