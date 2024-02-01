@@ -151,6 +151,7 @@ def main():
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--load_dir', type=str, default='', help='directory to load the model from')
+	parser.add_argument('--num_rollouts', type=int, default=10, help='number of episodes to rollout')
 	parser.add_argument('--record', default=False, action='store_true', help='record the rollouts?')
 	parser.add_argument('--evaluate_lqr', default=False, action='store_true', help='compare against an lqr controller?')
 
@@ -184,7 +185,7 @@ def main():
 	elif (cfg['algorithm']['name'] == 'A2C'):
 		pass
 	test_env.gamma_ = model.gamma
-	_, _, _, starts = evaluate_model(model, test_env, num_episodes=10, print_outcomes=True, record=record)
+	_, _, _, starts = evaluate_model(model, test_env, num_episodes=args.num_rollouts, print_outcomes=True, record=record)
 	if (args.evaluate_lqr):
 		evaluate_lqr_controller(starts, test_env, num_episodes=starts.shape[1], print_outcomes=True, record=record)
 
