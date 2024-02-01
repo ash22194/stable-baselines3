@@ -9,7 +9,7 @@ class Unicycle(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, param=dict(), dt=1e-3, T=2., normalized_actions=True, normalized_observations=False, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
+	def __init__(self, param=dict(), dt=1e-3, T=2., normalized_actions=True, normalized_observations=False, nonlinear_cost=True, intermittent_starts=False, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Unicycle, self).__init__()
 		# Define model paramters
 		mw = 0.5
@@ -84,6 +84,10 @@ class Unicycle(gym.Env):
 		self.baumgarte_factor = 10
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
+		if (intermittent_starts):
+			self.step_count_high = self.horizon
+		else:
+			self.step_count_high = 1
 		self.alpha_cost = alpha_cost
 		# self.alpha_action_cost = alpha_action_cost
 		self.alpha_action_cost = alpha_cost
@@ -154,8 +158,11 @@ class Unicycle(gym.Env):
 
 	def reset(self, seed=None, options=None, state=None):
 		super().reset(seed=seed)
+		self.step_count = int(np.random.randint(low=0, high=self.step_count_high))
 		if (state is None):
-			sample = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+			# sample = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+			sample = (self.horizon - self.step_count) / self.horizon * (np.random.rand(self.independent_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+			sample += (0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]))
 		else:
 			assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
 			# construct the dependent states from the independent

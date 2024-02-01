@@ -4,6 +4,7 @@ import os
 import argparse
 from shutil import copyfile
 from ruamel.yaml import YAML
+import cProfile
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
 
 import gymnasium as gym
@@ -231,32 +232,42 @@ def main():
 	log_interval = 1 # number of steps after which logging happens = (num_envs*n_steps_to_update)*log_interval
 	if ((total_timesteps-model.num_timesteps) > 0):
 		if (profile_run):
-			activities = [ProfilerActivity.CPU]
-			profile_memory = True
-			use_cuda = False
 			if (env_device=='cuda') or (cfg['algorithm']['algorithm_kwargs'].get('device', 'cpu')=='cuda'):
-				activities += [ProfilerActivity.CUDA]
+				activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+				profile_memory = True
 				use_cuda = True
 
-			n_steps = cfg['algorithm']['algorithm_kwargs'].get('n_steps', 2000)
-			with profile(
-				activities=activities, 
-				profile_memory=profile_memory, 
-				use_cuda=use_cuda, 
-				with_stack=True,
-				record_shapes=False,
-				schedule=schedule(wait=n_steps, warmup=n_steps, active=n_steps, repeat=2),
-				on_trace_ready=torch.profiler.tensorboard_trace_handler(model.logger.dir)
-			) as prof:
-				callback = [callback, PytorchProfilerStepCallback(prof)]
-				with record_function('model_learn'):
-					model.learn(
-						total_timesteps=total_timesteps-model.num_timesteps,
-						log_interval=log_interval,
-						callback=callback,
-						reset_num_timesteps=(not model_load)
-					)
-			prof.export_chrome_trace(os.path.join(model.logger.dir, 'run_profile.json'))
+				n_steps = cfg['algorithm']['algorithm_kwargs'].get('n_steps', 2000)
+				with profile(
+					activities=activities, 
+					profile_memory=profile_memory, 
+					use_cuda=use_cuda, 
+					with_stack=True,
+					record_shapes=False,
+					schedule=schedule(wait=n_steps, warmup=n_steps, active=n_steps, repeat=2),
+					on_trace_ready=torch.profiler.tensorboard_trace_handler(model.logger.dir)
+				) as prof:
+					callback = [callback, PytorchProfilerStepCallback(prof)]
+					with record_function('model_learn'):
+						model.learn(
+							total_timesteps=total_timesteps-model.num_timesteps,
+							log_interval=log_interval,
+							callback=callback,
+							reset_num_timesteps=(not model_load)
+						)
+				prof.export_chrome_trace(os.path.join(model.logger.dir, 'run_profile.json'))
+			
+			else:
+				prof = cProfile.Profile()
+				prof.enable()
+				model.learn(
+					total_timesteps=total_timesteps-model.num_timesteps,
+					log_interval=log_interval,
+					callback=callback,
+					reset_num_timesteps=(not model_load)
+				)
+				prof.disable()
+				prof.dump_stats(os.path.join(model.logger.dir, 'run_profile'))
 
 		else:
 			model.learn(

@@ -12,7 +12,7 @@ class QuadcopterTT(gym.Env):
 	metadata = {'render_modes': ['human']}
 
 	def __init__(
-		self, trajectory_file, param=dict(), fixed_starts=False, reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
+		self, trajectory_file, param=dict(), fixed_starts=False, reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, intermittent_starts=False, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
 		m = 0.5
@@ -72,6 +72,10 @@ class QuadcopterTT(gym.Env):
 		self.fixed_starts = fixed_starts
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
+		if (intermittent_starts):
+			self.step_count_high = self.horizon
+		else:
+			self.step_count_high = 1
 		self.alpha_cost = alpha_cost
 		self.alpha_action_cost = alpha_action_cost
 		self.alpha_terminal_cost = alpha_terminal_cost
@@ -145,7 +149,7 @@ class QuadcopterTT(gym.Env):
 
 	def reset(self, seed=None, options=None, state=None):
 		super().reset(seed=seed)
-		self.step_count = int(0*np.random.randint(low=0, high=self.horizon))
+		self.step_count = int(np.random.randint(low=0, high=self.step_count_high))
 		if (self.fixed_starts):
 			self.state = self._interp_goal(self.step_count)
 		else:
