@@ -46,6 +46,7 @@ class QuadcopterTT(gym.Env):
 		trajectory = loadmat(trajectory_file)['trajectory']
 		self.reference_trajectory_horizon = int(reference_trajectory_horizon/self.T*trajectory.shape[1])
 		self.reference_trajectory = trajectory.copy()
+		self.goal = self._interp_goal(np.arange(self.horizon))
 
 		self.x_sample_limits = param['x_sample_limits'] # reset within these limits
 		self.x_bounds = np.zeros(param['x_bounds'].shape)
@@ -187,8 +188,8 @@ class QuadcopterTT(gym.Env):
 	
 	def _interp_goal(self, step_count):
 		ref_step_count = step_count / self.horizon * (self.reference_trajectory.shape[1] - 1)
-		lower_id = int(np.minimum(np.floor(ref_step_count), self.reference_trajectory.shape[1] - 1))
-		higher_id = int(np.minimum(lower_id+1, self.reference_trajectory.shape[1] - 1))
+		lower_id = np.minimum(np.floor(ref_step_count), self.reference_trajectory.shape[1] - 1).astype(np.int32)
+		higher_id = np.minimum(lower_id+1, self.reference_trajectory.shape[1] - 1).astype(np.int32)
 
 		return (self.reference_trajectory[:,lower_id] + (self.reference_trajectory[:,higher_id] - self.reference_trajectory[:,lower_id])*(ref_step_count - lower_id))
 
@@ -200,7 +201,7 @@ class QuadcopterTT(gym.Env):
 
 	def _get_cost(self, action, state_): #TODO
 		x = self.state[:,np.newaxis]
-		goal_t = self._interp_goal(self.step_count)[:,np.newaxis]
+		goal_t = self.goal[:,self.step_count:(self.step_count+1)]
 		y = (x - goal_t)[self.cost_dims,:]
 
 		a = action[:,np.newaxis]
@@ -214,7 +215,7 @@ class QuadcopterTT(gym.Env):
 
 	def _get_terminal_cost(self):
 		x = self.state[:,np.newaxis]
-		goal_t = self._interp_goal(self.horizon)[:,np.newaxis]
+		goal_t = self.goal[:,(self.horizon-1):self.horizon]
 		y = (x - goal_t)[self.cost_dims,:]
 
 		cost = np.sum(y * (self.QT @ y)) * self.alpha_terminal_cost
