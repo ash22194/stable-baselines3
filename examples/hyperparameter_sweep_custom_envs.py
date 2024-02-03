@@ -119,7 +119,8 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str, env_devi
 		for ssi in range(num_episodes):
 			test_env.reset()
 			starts += [test_env.state.copy()]
-			starts = np.array(starts)
+		starts = np.array(starts)
+		print("Saving %d test starts"%starts.shape[0])
 		np.save(os.path.join(save_dir, 'test_starts.npy'), starts, allow_pickle=False)
 	else:
 		starts = np.load(os.path.join(save_dir, 'test_starts.npy'), allow_pickle=False, mmap_mode=None)
@@ -299,12 +300,12 @@ class PruneTrialCallback(BaseCallback):
 		# check if trial should be pruned
 		check_point_id = divmod(self.model.num_timesteps+1, self.eval_every_timestep)[0]
 		if (check_point_id > self.curr_check_point_id):
-			start_file = os.path.join(os.path.dirname(os.path.dirname(self.save_path)), 'test_starts.npy')
+			start_file = os.path.join(os.path.dirname(self.save_path), 'test_starts.npy')
 			if (os.path.isfile(start_file)):
 				starts = np.load(start_file, allow_pickle=False, mmap_mode=None)
 				print('test_starts loaded successfully, found %d start samples!'%starts.shape[0])
 			else:
-				print('Unable to find start file!')
+				print('Unable to find start file at %s'%start_file)
 				starts = None
 			ep_reward, ep_discounted_reward, final_err = evaluate_model(self.model, self.eval_env, self.num_eval_episodes, starts)
 			self.curr_check_point_id = check_point_id
