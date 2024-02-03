@@ -44,7 +44,6 @@ class GPUQuadcopterTT:
 		assert trajectory_file.endswith('.mat'), 'Trajectory file must be a .mat'
 		trajectory_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), 'examples/configs/quadcopter_tt/trajectories', trajectory_file)
 		trajectory = loadmat(trajectory_file)['trajectory']
-		trajectory_timestamps = np.linspace(0, self.horizon, trajectory.shape[1])
 		self.reference_trajectory = trajectory.copy()
 		self.reference_trajectory_horizon = int(reference_trajectory_horizon/self.T*trajectory.shape[1])
 
