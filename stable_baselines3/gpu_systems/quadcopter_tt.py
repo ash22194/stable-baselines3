@@ -110,6 +110,7 @@ class GPUQuadcopterTT:
 		self.th_QT = th.asarray(param['QT'], device=device, dtype=self.th_dtype)
 		self.th_R = th.asarray(param['R'], device=device, dtype=self.th_dtype)
 		self.th_reference_trajectory = th.asarray(trajectory, device=device, dtype=self.th_dtype)
+		self.th_goal = self._interp_goal(th.arange(self.horizon, device=device, dtype=self.th_dtype))
 		self.th_u0 = th.asarray(param['u0'][:,0], device=device, dtype=self.th_dtype)
 		self.th_cost_dims = th.arange(self.X_DIMS, device=device, dtype=th.int)
 		self.th_tracking_dims = th.asarray([0,1,2,3,4,5], device=device, dtype=th.int)
@@ -143,7 +144,7 @@ class GPUQuadcopterTT:
 		cost, reached_goal = self._get_cost(action, state_)
 
 		self.state = state_
-		self.step_count += 1.
+		self.step_count += 1
 		self._update_tracking_error()
 		self._set_obs()
 
@@ -181,11 +182,11 @@ class GPUQuadcopterTT:
 
 			num_done = th.sum(done)
 			if (num_done > 0):
-				# step_count_new = th.randint(low=0, high=self.horizon, size=(num_done,1), dtype=th.float32, device=self.device)
+				# step_count_new = th.randint(low=0, high=self.horizon, size=(num_done,1), dtype=self.th_dtype, device=self.device)
 				step_count_new = th.zeros((num_done, 1), device=self.device, dtype=self.th_dtype)
 				state_new = ((th.rand((num_done, self.independent_sampling_dims.shape[0]), device=self.device, dtype=self.th_dtype) - 0.5) * (self.th_x_sample_limits_range))
 				state_new = (((self.horizon - step_count_new) / self.horizon) * state_new)
-				state_new += (self._interp_goal(step_count_new) + self.th_x_sample_limits_mid)
+				state_new += (self._interp_goal(step_count_new[:,0]) + th.unsqueeze(self.th_x_sample_limits_mid, dim=0))
 
 				self.step_count[done] = step_count_new[:,0]
 				self.state[done,:] = state_new
@@ -194,7 +195,7 @@ class GPUQuadcopterTT:
 		
 		self._set_obs()
 		info = {}
-		
+
 		return self.get_obs(), info
 	
 	def get_obs(self, normalized=None):
@@ -216,22 +217,24 @@ class GPUQuadcopterTT:
 			reference_trajectory_ids,
 			th.as_tensor([self.th_reference_trajectory.shape[1]-1], device=self.device, dtype=th.int)
 		)
-		delta_reference = th.unsqueeze(self.state, dim=2) - th.transpose(self.th_reference_trajectory[:,reference_trajectory_ids], 0, 1)
+		delta_reference = th.unsqueeze(self.state, dim=2) - th.transpose(self.th_reference_trajectory[:,reference_trajectory_ids], 0, 1)		
 		self.obs[:,(self.observation_dims.shape[0]+1):] = th.reshape(delta_reference, (self.num_envs, self.X_DIMS*self.reference_trajectory_horizon))
 
 	def _interp_goal(self, step_count):
-		ref_step_count = step_count / self.horizon * self.th_reference_trajectory.shape[1]
+		ref_step_count = step_count / self.horizon * (self.th_reference_trajectory.shape[1]-1)
 		lower_id = th.as_tensor(th.floor(ref_step_count), device=self.device, dtype=th.int)
+		lower_id = th.minimum(lower_id, th.as_tensor([self.th_reference_trajectory.shape[1]-1], device=self.device, dtype=th.int))
 		higher_id = th.minimum(lower_id+1, th.as_tensor([self.th_reference_trajectory.shape[1]-1], device=self.device, dtype=th.int))
 
-		return th.transpose(self.th_reference_trajectory[:,lower_id] + (self.th_reference_trajectory[:,higher_id] - self.th_reference_trajectory[:,lower_id])*(ref_step_count - lower_id), 0, 1)
+		goal = th.transpose(self.th_reference_trajectory[:,lower_id] + (self.th_reference_trajectory[:,higher_id] - self.th_reference_trajectory[:,lower_id])*(ref_step_count - lower_id), 0, 1)
+		return goal
 
 	def _update_tracking_error(self):
-		goal_t = self._interp_goal(self.step_count)
+		goal_t = self.th_goal[self.step_count,:]
 		self.tracking_error += th.linalg.norm((self.state - goal_t)[:,self.th_tracking_dims], dim=1, keepdim=False)
 
 	def _get_cost(self, action, state_):
-		goal_t = self._interp_goal(self.step_count)
+		goal_t = self.th_goal[self.step_count,:]
 		y = (self.state - goal_t)[:,self.th_cost_dims]
 
 		cost = th.sum((y @ self.th_Q) * y, dim=1, keepdim=False) * self.alpha_cost 
@@ -248,7 +251,7 @@ class GPUQuadcopterTT:
 		else:
 			done = th.ones(self.num_envs, device=self.device, dtype=th.bool)
 
-		goal_t = self._interp_goal(self.horizon * th.ones(self.num_envs, device=self.device, dtype=self.th_dtype))
+		goal_t = self.th_goal[(self.horizon-1):self.horizon,:]
 		y = (self.state - goal_t)[:,self.th_cost_dims]
 
 		cost = th.sum((y @ self.th_QT) * y, dim=1, keepdim=False) * self.alpha_terminal_cost

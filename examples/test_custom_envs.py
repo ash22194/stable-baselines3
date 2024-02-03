@@ -176,7 +176,8 @@ def main():
 		elif (ff_ext == '.yaml'):
 			cfg = YAML().load(open(ff, 'r'))
 	
-	test_env = gym.make(cfg['environment']['name'], **cfg['environment']['environment_kwargs'])
+	eval_envname = cfg['environment'].get('eval_envname', cfg['environment']['name'])
+	test_env = gym.make(eval_envname, **cfg['environment']['environment_kwargs'])
 	check_env(test_env)
 
 	if (cfg['algorithm']['name'] == 'PPO'):
