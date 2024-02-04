@@ -28,7 +28,7 @@ class RolloutBufferSamples(NamedTuple):
     observations: th.Tensor
     actions: th.Tensor
     actions_mu: th.Tensor
-    actions: th.Tensor
+    actions_log_std: th.Tensor
     old_values: th.Tensor
     old_log_prob: th.Tensor
     advantages: th.Tensor
