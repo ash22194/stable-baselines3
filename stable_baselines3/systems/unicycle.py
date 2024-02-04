@@ -32,10 +32,10 @@ class Unicycle(gym.Env):
 			'alpha': -np.pi/2, 'g': 9.81, 'fcoeff': 0.05, 'T': 2, 'dt':1e-3, 'gamma_':0.9995, 'X_DIMS': 16, 'U_DIMS': 2,\
 			'goal': goal, 'u0': np.zeros((2,1)),\
 			# 'Q_quadratic': np.diag([0.25, 1, 0.25, 0.025, 0.0025, 0.01, 0.0001, 0.01]), 'R_quadratic': (np.eye(2) / 5000.), 'QT_quadratic': 2*np.diag([1.,1.,1.,1.,1.,1.,1.,1.]),\
-			'Q_quadratic': np.diag([0.25, 1, 0.025, 0.0025, 0.0001, 0.001, 0.0005, 0.0001]), 'R_quadratic': (np.eye(2) / 5000.), 'QT_quadratic': 2*np.diag([1.,1.,1.,1.,1.,1.,1.,1.]),\
+			'Q_quadratic': np.diag([0.25, 1, 0.25, 0.025, 0.0001, 0.001, 0.0005, 0.0001]), 'R_quadratic': (np.eye(2) / 5000.), 'QT_quadratic': 2*np.diag([1.,1.,1.,1.,1.,1.,1.,1.]),\
 			# 'Q_nonlinear': np.diag([1.,1., 0.001,0.001, 0.01,0.0001, 0.0025, 0.0005]), 'R_nonlinear': (np.eye(2) / 5000.), 'QT_nonlinear': 2*np.eye(8), \
 			'Q_nonlinear': np.diag([1,0.25, 0.001,0.00025, 0.025,0.000025, 0.005, 0.0005]), 'R_nonlinear': (np.eye(2) / 5000.), 'QT_nonlinear': 2*np.eye(8), \
-			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/15, np.pi/15], [-np.pi/15, np.pi/15], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-1., 1.], [-1., 1.], [-1., 1.], [5., 15.], [-1., 1.]]),\
+			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-1., 1.], [-1., 1.], [-1., 1.], [5., 15.], [-1., 1.]]),\
 			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/2.5, np.pi/2.5], [-np.pi/2.5, np.pi/2.5], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [-5., 25.], [-8., 8.]]),\
 			'u_limits': np.array([[-15., 15.], [-15., 15.]])}
 		param_.update(param)

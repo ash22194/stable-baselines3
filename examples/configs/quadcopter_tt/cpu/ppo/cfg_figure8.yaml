@@ -4,14 +4,15 @@ environment:
   normalized_rewards: false
   environment_kwargs:
     trajectory_file: 'trajectory_figure8_wider.mat'
-    dt: 0.008
     param:
+      dt: 0.006
       T: 6.
       max_thrust_factor: 2
     fixed_starts: false
-    reference_trajectory_horizon: 1.
+    reference_trajectory_horizon: 1.2
     normalized_actions: true
     normalized_observations: true
+    intermittent_starts: false
     alpha_cost: 5.693
     alpha_action_cost: 1.1386
     alpha_terminal_cost: 0.3166

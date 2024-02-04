@@ -4,7 +4,8 @@ environment:
   normalized_rewards: false
   environment_kwargs:
     trajectory_file: 'trajectory_sine.mat'
-    dt: 0.004
+    param:
+      dt: 0.004
     fixed_starts: false
     reference_trajectory_horizon: 0.5
     normalized_actions: true
