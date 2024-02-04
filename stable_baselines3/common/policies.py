@@ -11,6 +11,7 @@ import numpy as np
 import torch as th
 from gymnasium import spaces
 from torch import nn
+from ipdb import set_trace
 
 from stable_baselines3.common.distributions import (
     BernoulliDistribution,
@@ -27,6 +28,7 @@ from stable_baselines3.common.torch_layers import (
     CombinedExtractor,
     FlattenExtractor,
     MlpExtractor,
+    ModularActionMlpExtractor,
     NatureCNN,
     create_mlp,
 )
@@ -701,6 +703,311 @@ class ActorCriticPolicy(BasePolicy):
             return self.action_dist.proba_distribution(action_logits=mean_actions)
         elif isinstance(self.action_dist, StateDependentNoiseDistribution):
             return self.action_dist.proba_distribution(mean_actions, self.log_std, latent_pi)
+        else:
+            raise ValueError("Invalid action distribution")
+
+    def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
+        """
+        Get the action according to the policy for a given observation.
+
+        :param observation:
+        :param deterministic: Whether to use stochastic or deterministic actions
+        :return: Taken action according to the policy
+        """
+        return self.get_distribution(observation).get_actions(deterministic=deterministic)
+
+    def evaluate_actions(self, obs: th.Tensor, actions: th.Tensor) -> Tuple[th.Tensor, th.Tensor, Optional[th.Tensor]]:
+        """
+        Evaluate actions according to the current policy,
+        given the observations.
+
+        :param obs: Observation
+        :param actions: Actions
+        :return: estimated value, log likelihood of taking those actions
+            and entropy of the action distribution.
+        """
+        # Preprocess the observation if needed
+        features = self.extract_features(obs)
+        if self.share_features_extractor:
+            latent_pi, latent_vf = self.mlp_extractor(features)
+        else:
+            pi_features, vf_features = features
+            latent_pi = self.mlp_extractor.forward_actor(pi_features)
+            latent_vf = self.mlp_extractor.forward_critic(vf_features)
+        distribution = self._get_action_dist_from_latent(latent_pi)
+        log_prob = distribution.log_prob(actions)
+        values = self.value_net(latent_vf)
+        entropy = distribution.entropy()
+        return values, log_prob, entropy
+
+    def get_distribution(self, obs: th.Tensor) -> Distribution:
+        """
+        Get the current policy distribution given the observations.
+
+        :param obs:
+        :return: the action distribution.
+        """
+        features = super().extract_features(obs, self.pi_features_extractor)
+        latent_pi = self.mlp_extractor.forward_actor(features)
+        return self._get_action_dist_from_latent(latent_pi)
+
+    def predict_values(self, obs: th.Tensor) -> th.Tensor:
+        """
+        Get the estimated values according to the current policy given the observations.
+
+        :param obs: Observation
+        :return: the estimated values.
+        """
+        features = super().extract_features(obs, self.vf_features_extractor)
+        latent_vf = self.mlp_extractor.forward_critic(features)
+        return self.value_net(latent_vf)
+
+
+class ModularActorCriticPolicy(BasePolicy):
+    """
+    Policy class for actor-critic algorithms (has both policy and value prediction).
+    Used by A2C, PPO and the likes.
+    """
+
+    def __init__(
+        self,
+        observation_space: spaces.Space,
+        action_space: spaces.Space,
+        lr_schedule: Schedule,
+        net_arch: Dict[str, List] = None,
+        activation_fn: Type[nn.Module] = nn.Tanh,
+        with_scaling: bool = False,
+        ortho_init: bool = True,
+        use_sde: bool = False,
+        log_std_init: float = 0.0,
+        full_std: bool = True,
+        use_expln: bool = False,
+        squash_output: bool = False,
+        features_extractor_class: Type[BaseFeaturesExtractor] = FlattenExtractor,
+        features_extractor_kwargs: Optional[Dict[str, Any]] = None,
+        share_features_extractor: bool = True,
+        normalize_images: bool = True,
+        optimizer_class: Type[th.optim.Optimizer] = th.optim.Adam,
+        optimizer_kwargs: Optional[Dict[str, Any]] = None,
+    ):
+        if optimizer_kwargs is None:
+            optimizer_kwargs = {}
+            # Small values to avoid NaN in Adam optimizer
+            if optimizer_class == th.optim.Adam:
+                optimizer_kwargs["eps"] = 1e-5
+
+        super().__init__(
+            observation_space,
+            action_space,
+            features_extractor_class,
+            features_extractor_kwargs,
+            optimizer_class=optimizer_class,
+            optimizer_kwargs=optimizer_kwargs,
+            squash_output=squash_output,
+            normalize_images=normalize_images,
+        )
+
+        assert isinstance(net_arch, Dict) and ('pi' in net_arch.keys()) and ('vf' in net_arch.keys()), 'net_arch must be a dict with keys pi and vf'
+        assert sum([len(in_module[0]) for in_module in net_arch['pi']])==get_action_dim(action_space), 'number of action modules must be the same as the number of control inputs'
+
+        self.net_arch = net_arch
+        self.activation_fn = activation_fn
+        self.with_scaling = with_scaling
+        self.ortho_init = ortho_init
+
+        self.share_features_extractor = share_features_extractor
+        self.features_extractor = self.make_features_extractor()
+        self.features_dim = self.features_extractor.features_dim
+        if self.share_features_extractor:
+            self.pi_features_extractor = self.features_extractor
+            self.vf_features_extractor = self.features_extractor
+        else:
+            self.pi_features_extractor = self.features_extractor
+            self.vf_features_extractor = self.make_features_extractor()
+
+        self.log_std_init = log_std_init
+        dist_kwargs = None
+
+        assert not squash_output, "squash_output is currently not supported for modular policies"
+        assert not use_sde, "sde is currently not supported for modular policies"
+        # Keyword arguments for gSDE distribution
+
+        self.use_sde = use_sde
+        self.dist_kwargs = dist_kwargs
+
+        # Action distribution
+        self.action_dist = make_proba_distribution(action_space, use_sde=use_sde, dist_kwargs=dist_kwargs)
+
+        self._build(lr_schedule)
+
+    def _get_constructor_parameters(self) -> Dict[str, Any]:
+        data = super()._get_constructor_parameters()
+
+        default_none_kwargs = self.dist_kwargs or collections.defaultdict(lambda: None)
+
+        data.update(
+            dict(
+                net_arch=self.net_arch,
+                activation_fn=self.activation_fn,
+                use_sde=self.use_sde,
+                log_std_init=self.log_std_init,
+                squash_output=default_none_kwargs["squash_output"],
+                full_std=default_none_kwargs["full_std"],
+                use_expln=default_none_kwargs["use_expln"],
+                lr_schedule=self._dummy_schedule,  # dummy lr schedule, not needed for loading policy alone
+                ortho_init=self.ortho_init,
+                optimizer_class=self.optimizer_class,
+                optimizer_kwargs=self.optimizer_kwargs,
+                features_extractor_class=self.features_extractor_class,
+                features_extractor_kwargs=self.features_extractor_kwargs,
+            )
+        )
+        return data
+
+    def reset_noise(self, n_envs: int = 1) -> None:
+        """
+        Sample new weights for the exploration matrix.
+
+        :param n_envs:
+        """
+        pass
+
+    def _build_mlp_extractor(self) -> None:
+        """
+        Create the policy and value networks.
+        Part of the layers can be shared.
+        """
+        # Note: If net_arch is None and some features extractor is used,
+        #       net_arch here is an empty list and mlp_extractor does not
+        #       really contain any layers (acts like an identity module).
+        self.mlp_extractor = ModularActionMlpExtractor(
+            self.features_dim,
+            net_arch=self.net_arch,
+            activation_fn=self.activation_fn,
+            device=self.device,
+            with_scaling=self.with_scaling
+        )
+
+    def _build(self, lr_schedule: Schedule) -> None:
+        """
+        Create the networks and the optimizer.
+
+        :param lr_schedule: Learning rate schedule
+            lr_schedule(1) is the initial learning rate
+        """
+        self._build_mlp_extractor()
+
+        if isinstance(self.action_dist, DiagGaussianDistribution):
+            assert sum(self.mlp_extractor.module_action_dim) == get_action_dim(self.action_space), 'Outputs of the action modules must be of the same dimension as the action space'
+            self.action_net = [nn.Linear(ld_pi, mad_pi) for ld_pi, mad_pi in zip(self.mlp_extractor.latent_dim_pi, self.mlp_extractor.module_action_dim)]
+            self.log_std = nn.Parameter(th.ones(get_action_dim(self.action_space)) * self.log_std_init, requires_grad=True)
+        else:
+            raise NotImplementedError(f"Unsupported distribution '{self.action_dist}'.")
+
+        self.value_net = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
+
+        # Init weights: use orthogonal initialization
+        # with small initial weight for the output
+        if self.ortho_init:
+            # TODO: check for features_extractor
+            # Values from stable-baselines.
+            # features_extractor/mlp values are
+            # originally from openai/baselines (default gains/init_scales).
+            module_gains = {
+                self.features_extractor: np.sqrt(2),
+                self.mlp_extractor: np.sqrt(2),
+                self.value_net: 1,
+            }
+            for mm in self.action_net:
+                module_gains[mm] = 0.01
+            if not self.share_features_extractor:
+                # Note(antonin): this is to keep SB3 results
+                # consistent, see GH#1148
+                del module_gains[self.features_extractor]
+                module_gains[self.pi_features_extractor] = np.sqrt(2)
+                module_gains[self.vf_features_extractor] = np.sqrt(2)
+
+            for module, gain in module_gains.items():
+                module.apply(partial(self.init_weights, gain=gain))
+
+        # Setup optimizer with initial learning rate
+        self.optimizer = self.optimizer_class(self.parameters(), lr=lr_schedule(1), **self.optimizer_kwargs)
+
+    def get_weights(self):
+        """
+        Return a dictionary of weights : shared, policy/action_net and value_net
+        TODO: Include weights for feature extractor too? - Usually kept fixed
+        """
+        weights = OrderedDict()
+        # Policy network
+        for mm in self.mlp_extractor.policy_net:
+            for mmi in mm.named_parameters():
+                weights['policy-net/'+mmi[0]] = mmi[1]
+        for mm in self.action_net:
+            for mmi in mm.named_parameters():
+                weights['policy-net/out/'+mmi[0]] = mmi[1]
+
+        # Value netowork
+        for mm in self.mlp_extractor.value_net.named_parameters():
+            weights['value-net/'+mm[0]] = mm[1]
+        for mm in self.value_net.named_parameters():
+            weights['value-net/out/'+mm[0]] = mm[1]
+
+        return weights
+
+    def forward(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
+        """
+        Forward pass in all the networks (actor and critic)
+
+        :param obs: Observation
+        :param deterministic: Whether to sample or use deterministic actions
+        :return: action, value and log probability of the action
+        """
+        # Preprocess the observation if needed
+        features = self.extract_features(obs)
+        if self.share_features_extractor:
+            latent_pi, latent_vf = self.mlp_extractor(features)
+        else:
+            pi_features, vf_features = features
+            latent_pi = self.mlp_extractor.forward_actor(pi_features)
+            latent_vf = self.mlp_extractor.forward_critic(vf_features)
+        # Evaluate the values for the given observations
+        values = self.value_net(latent_vf)
+        distribution = self._get_action_dist_from_latent(latent_pi)
+        actions = distribution.get_actions(deterministic=deterministic)
+        log_prob = distribution.log_prob(actions)
+        actions = actions.reshape((-1, *self.action_space.shape))
+        return actions, values, log_prob
+
+    def extract_features(self, obs: th.Tensor) -> Union[th.Tensor, Tuple[th.Tensor, th.Tensor]]:
+        """
+        Preprocess the observation if needed and extract features.
+
+        :param obs: Observation
+        :return: the output of the features extractor(s)
+        """
+        if self.share_features_extractor:
+            return super().extract_features(obs, self.features_extractor)
+        else:
+            pi_features = super().extract_features(obs, self.pi_features_extractor)
+            vf_features = super().extract_features(obs, self.vf_features_extractor)
+            return pi_features, vf_features
+
+    def _get_action_dist_from_latent(self, latent_pi: List[th.Tensor]) -> Distribution:
+        """
+        Retrieve action distribution given the latent codes.
+
+        :param latent_pi: Latent code for the actor
+        :return: Action distribution
+        """
+        mean_actions = []
+        for ilp, lp in enumerate(latent_pi):
+            mean_actions.append(self.action_net[ilp](lp))
+        mean_actions = th.cat(mean_actions, dim=-1)
+        mean_actions = mean_actions[...,self.mlp_extractor.input_map]
+
+        if isinstance(self.action_dist, DiagGaussianDistribution):
+            return self.action_dist.proba_distribution(mean_actions, self.log_std)
         else:
             raise ValueError("Invalid action distribution")
 

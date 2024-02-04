@@ -239,6 +239,70 @@ class MlpExtractor(nn.Module):
         return self.value_net(features)
 
 
+class ModularActionMlpExtractor(nn.Module):
+    def __init__(
+        self,
+        feature_dim: int,
+        net_arch: dict,
+        activation_fn: nn.ReLU,
+        device='cpu',
+        with_scaling=False
+    ):
+        super().__init__()
+        # IMPORTANT:
+        # Save output dimensions, used to create the distributions
+        # net_arch['pi'] is a list of lists
+        
+        # Policy network
+        self.policy_net = []
+        self.latent_dim_pi = []
+        self.module_action_dim = []
+        input_map = []
+        for ii in range(len(net_arch['pi'])):
+            input_map.append(net_arch['pi'][ii][0])
+            self.module_action_dim.append(len(net_arch['pi'][ii][0]))
+            inputs_policy_architechture = net_arch['pi'][ii][1]
+            inputs_policy_net = []
+            last_layer_dim_pi = feature_dim
+            for curr_layer_dim_pi in inputs_policy_architechture:
+                inputs_policy_net.append(nn.Linear(last_layer_dim_pi, curr_layer_dim_pi))
+                inputs_policy_net.append(activation_fn())
+                if (with_scaling):
+                    inputs_policy_net.append(ScaleLayer(curr_layer_dim))
+                last_layer_dim_pi = curr_layer_dim_pi
+            self.latent_dim_pi.append(last_layer_dim_pi)
+            self.policy_net.append(nn.Sequential(*inputs_policy_net).to(device))
+
+        assert th.unique(th.as_tensor(input_map)).shape[0]==len(input_map), 'control inputs cannot belong to two policy modules'
+        self.input_map = th.zeros(len(input_map), dtype=th.int32)
+        for it in range(len(input_map)):
+            self.input_map[input_map[it]] = it
+        self.input_map = self.input_map.tolist()
+
+        # Value network
+        last_layer_dim_vf = feature_dim
+        value_net = []
+        for curr_layer_dim_vf in net_arch['vf']:
+            value_net.append(nn.Linear(last_layer_dim_vf, curr_layer_dim_vf))
+            value_net.append(activation_fn())
+            last_layer_dim_vf = curr_layer_dim_vf
+        self.latent_dim_vf = last_layer_dim_vf
+        self.value_net = nn.Sequential(*value_net).to(device)
+
+    def forward(self, features: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
+        """
+        :return: (th.Tensor, th.Tensor) latent_policy, latent_value of the specified network.
+            If all layers are shared, then ``latent_policy == latent_value``
+        """
+        return self.forward_actor(features), self.forward_critic(features)
+
+    def forward_actor(self, features: th.Tensor) -> th.Tensor:
+        return [pn(features) for pn in self.policy_net]
+
+    def forward_critic(self, features: th.Tensor) -> th.Tensor:
+        return self.value_net(features)
+
+
 class CombinedExtractor(BaseFeaturesExtractor):
     """
     Combined features extractor for Dict observation spaces.

@@ -7,7 +7,7 @@ from gymnasium import spaces
 from torch.nn import functional as F
 
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
-from stable_baselines3.common.policies import ActorCriticCnnPolicy, ActorCriticPolicy, BasePolicy, MultiInputActorCriticPolicy
+from stable_baselines3.common.policies import ActorCriticCnnPolicy, ActorCriticPolicy, ModularActorCriticPolicy, BasePolicy, MultiInputActorCriticPolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.distributions import kl_divergence, make_proba_distribution
 from stable_baselines3.common.utils import explained_variance, get_schedule_fn, update_learning_rate
@@ -72,6 +72,7 @@ class PPO(OnPolicyAlgorithm):
 
     policy_aliases: ClassVar[Dict[str, Type[BasePolicy]]] = {
         "MlpPolicy": ActorCriticPolicy,
+        "ModularMlpPolicy": ModularActorCriticPolicy,
         "CnnPolicy": ActorCriticCnnPolicy,
         "MultiInputPolicy": MultiInputActorCriticPolicy,
     }

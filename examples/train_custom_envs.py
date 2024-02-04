@@ -175,11 +175,11 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 	if (model_uninitialized): 
 		# new training or unsaved model from a previous run
 		if (algorithm == 'A2C'):
-			model = A2CwReg('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
+			model = A2CwReg(policy_args.get('type', 'MlpPolicy'), env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 		elif (algorithm == 'PPO'):
-			model = PPO('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
+			model = PPO(policy_args.get('type', 'MlpPolicy'), env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 		elif (algorithm == 'TD3'):
-			model = TD3('MlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
+			model = TD3(policy_args.get('type', 'MlpPolicy'), env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 
 		log_path = os.path.join(save_dir, algorithm, 'tb_log')
 		logger = configure_logger(verbose=1, tensorboard_log=log_path, tb_log_name=algorithm, reset_num_timesteps=True)
