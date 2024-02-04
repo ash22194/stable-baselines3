@@ -185,7 +185,7 @@ class GPUQuadcopterTT:
 				step_count_new = th.zeros((num_done, 1), device=self.device, dtype=self.th_dtype)
 				state_new = ((th.rand((num_done, self.independent_sampling_dims.shape[0]), device=self.device, dtype=self.th_dtype) - 0.5) * (self.th_x_sample_limits_range))
 				state_new = (((self.horizon - step_count_new) / self.horizon) * state_new)
-				state_new += (self._interp_goal(step_count_new[:,0]) + th.unsqueeze(self.th_x_sample_limits_mid, dim=0))
+				state_new += (self.th_goal[step_count_new[:,0],:] + th.unsqueeze(self.th_x_sample_limits_mid, dim=0))
 
 				self.step_count[done] = step_count_new[:,0]
 				self.state[done,:] = state_new
