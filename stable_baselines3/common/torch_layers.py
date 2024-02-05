@@ -272,6 +272,7 @@ class ModularActionMlpExtractor(nn.Module):
                 last_layer_dim_pi = curr_layer_dim_pi
             self.latent_dim_pi.append(last_layer_dim_pi)
             self.policy_net.append(nn.Sequential(*inputs_policy_net).to(device))
+        self.policy_net = nn.ModuleList(self.policy_net)
 
         assert th.unique(th.as_tensor(input_map)).shape[0]==len(input_map), 'control inputs cannot belong to two policy modules'
         self.input_map = th.zeros(len(input_map), dtype=th.int32)
