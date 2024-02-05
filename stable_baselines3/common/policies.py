@@ -899,7 +899,7 @@ class ModularActorCriticPolicy(BasePolicy):
 
         if isinstance(self.action_dist, DiagGaussianDistribution):
             assert sum(self.mlp_extractor.module_action_dim) == get_action_dim(self.action_space), 'Outputs of the action modules must be of the same dimension as the action space'
-            self.action_net = [nn.Linear(ld_pi, mad_pi) for ld_pi, mad_pi in zip(self.mlp_extractor.latent_dim_pi, self.mlp_extractor.module_action_dim)]
+            self.action_net = nn.ModuleList([nn.Linear(ld_pi, mad_pi) for ld_pi, mad_pi in zip(self.mlp_extractor.latent_dim_pi, self.mlp_extractor.module_action_dim)])
             self.log_std = nn.Parameter(th.ones(get_action_dim(self.action_space)) * self.log_std_init, requires_grad=True)
         else:
             raise NotImplementedError(f"Unsupported distribution '{self.action_dist}'.")
@@ -940,12 +940,12 @@ class ModularActorCriticPolicy(BasePolicy):
         """
         weights = OrderedDict()
         # Policy network
-        for mm in self.mlp_extractor.policy_net:
+        for im, mm in enumerate(self.mlp_extractor.policy_net):
             for mmi in mm.named_parameters():
-                weights['policy-net/'+mmi[0]] = mmi[1]
-        for mm in self.action_net:
+                weights['policy-net/module_%d'%im+mmi[0]] = mmi[1]
+        for im, mm in enumerate(self.action_net):
             for mmi in mm.named_parameters():
-                weights['policy-net/out/'+mmi[0]] = mmi[1]
+                weights['policy-net/out/module_%d'%im+mmi[0]] = mmi[1]
 
         # Value netowork
         for mm in self.mlp_extractor.value_net.named_parameters():
