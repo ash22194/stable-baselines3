@@ -3,23 +3,24 @@ environment:
   num_envs: 3
   normalized_rewards: false
   environment_kwargs:
-    trajectory_file: 'trajectory_loop.mat'
-    dt: 0.0025
+    trajectory_file: 'trajectory_loop_longer.mat'
     param:
-      T: 4
+      T: 6
+      dt: 0.006
       max_thrust_factor: 3 
     fixed_starts: true
-    reference_trajectory_horizon: 0.66
+    reference_trajectory_horizon: 1.2
     normalized_actions: true
     normalized_observations: true
-    alpha_cost: 5.693
-    alpha_action_cost: 1.1386
+    intermittent_starts: false
+    alpha_cost: 8.54
+    alpha_action_cost: 1.139
     alpha_terminal_cost: 0.3166
 
 algorithm:
   name: PPO
-  total_timesteps: 30000000
-  save_every_timestep: 30000000
+  total_timesteps: 50000000
+  save_every_timestep: 25000000
   algorithm_kwargs:
     gamma: 0.9984539792726858
     gae_lambda: 0.99

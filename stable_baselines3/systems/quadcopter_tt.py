@@ -152,11 +152,11 @@ class QuadcopterTT(gym.Env):
 		super().reset(seed=seed)
 		self.step_count = int(np.random.randint(low=0, high=self.step_count_high))
 		if (self.fixed_starts):
-			self.state = self._interp_goal(self.step_count)
+			self.state = self.goal[:,self.step_count]
 		else:
 			if (state is None):
 				self.state = (self.horizon - self.step_count) / self.horizon * (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
-				self.state += self._interp_goal(self.step_count) + 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1])
+				self.state += self.goal[:,self.step_count] + 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1])
 			else:
 				assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
 				self.state = state
@@ -195,19 +195,19 @@ class QuadcopterTT(gym.Env):
 
 	def _update_tracking_error(self):
 		x = self.state[:,np.newaxis]
-		goal_t = self._interp_goal(self.step_count)[:,np.newaxis]
+		goal_t = self.goal[:,self.step_count:(self.step_count+1)]
 		y = (x - goal_t)[self.tracking_dims,:]
 		self.tracking_error += np.linalg.norm(y)
 
-	def _get_cost(self, action, state_): #TODO
+	def _get_cost(self, action, state_):
 		x = self.state[:,np.newaxis]
 		goal_t = self.goal[:,self.step_count:(self.step_count+1)]
 		y = (x - goal_t)[self.cost_dims,:]
 
 		a = action[:,np.newaxis]
 
-		cost = np.sum(y * (self.Q @ y)) * self.alpha_cost + np.sum((a - self.u0) * (self.R @ (a - self.u0))) * self.alpha_action_cost
-		cost = cost * self.dt
+		cost = y.T @ (self.Q @ y) * self.alpha_cost + (a - self.u0).T @ (self.R @ (a - self.u0)) * self.alpha_action_cost
+		cost = cost[0,0] * self.dt
 
 		reached_goal = False
 
@@ -218,9 +218,9 @@ class QuadcopterTT(gym.Env):
 		goal_t = self.goal[:,(self.horizon-1):self.horizon]
 		y = (x - goal_t)[self.cost_dims,:]
 
-		cost = np.sum(y * (self.QT @ y)) * self.alpha_terminal_cost
+		cost = y.T @ (self.QT @ y) * self.alpha_terminal_cost
 
-		return cost
+		return cost[0,0]
 
 	def dyn_rk4(self, x, u, dt):
 		k1 = self.dyn_full(x, u)

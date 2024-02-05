@@ -9,7 +9,6 @@ environment:
     alpha_cost: 1.223633355917235
     alpha_terminal_cost: 1.9898048601277891
 
-
 algorithm:
   name: PPO
   total_timesteps: 15000000
@@ -31,9 +30,18 @@ algorithm:
 
 policy:
   save_prefix: model
+  type: 'ModularMlpPolicy'
   policy_kwargs:
     net_arch:
-      pi: [256, 256, 256]
+      pi:
+        - - [0]
+          - [256,256,256]
+        - - [1]
+          - [256,256,256]
+        - - [2]
+          - [256,256,256]
+        - - [3]
+          - [256,256,256]
       vf: [256, 256, 256]
     activation_fn: relu
     optimizer_class: rmsprop

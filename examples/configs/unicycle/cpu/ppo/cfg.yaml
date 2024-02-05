@@ -1,21 +1,22 @@
 environment:
   name: 'Unicycle-v0'
-  num_envs: 1
+  num_envs: 7
   normalized_rewards: False
   environment_kwargs:
     nonlinear_cost: False
     normalized_actions: True
     normalized_observations: True
+    intermittent_starts: False
     dt: 0.004
-    T: 3.
-    alpha_cost: 0.79
-    alpha_action_cost: 0.79
-    alpha_terminal_cost: 0.1
+    T: 4.
+    alpha_cost: 31.351
+    alpha_action_cost: 31.351
+    alpha_terminal_cost: 0.08501
 
 algorithm:
   name: 'PPO'
-  total_timesteps: 15000000
-  save_every_timestep: 10000000
+  total_timesteps: 20000000
+  save_every_timestep: 15000000
   algorithm_kwargs:
     gamma: 0.9995
     gae_lambda: 0.99
@@ -23,10 +24,10 @@ algorithm:
     vf_coef: 0.5
     normalize_advantage: False
     max_grad_norm: 0.9216909281395821
-    learning_rate: 0.00036558379071618247
+    learning_rate: 0.0009034
     learning_rate_schedule: 
       type: 'lin'
-    n_steps: 320
+    n_steps: 1036
     n_epochs: 7
     batch_size: null
     clip_range: 0.2

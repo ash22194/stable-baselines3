@@ -1,41 +1,49 @@
 criteria:
   type: 'final_err'
-  num_episodes: 20
+  num_episodes: 50
 
 environment:
+  intermittent_starts:
+    type: 'categorical'
+    choices: [True, False]
+
   num_envs:
     type: 'int'
-    low: 1
-    high: 5
+    low: 3
+    high: 8
+  
+  dt:
+    type: 'categorical'
+    choices: [0.004, 0.005]
 
   alpha_cost:
     type: 'float'
-    low: 0.05
+    low: 1
     high: 50
     log: True
   
   alpha_action_cost:
     type: 'float'
-    low: 0.05
+    low: 1
     high: 50
     log: True
 
   alpha_terminal_cost:
     type: 'float'
     low: 0.05
-    high: 50
+    high: 5
     log: True
 
 algorithm:
   n_steps:
     type: 'int'
-    low: 64
-    high: 1024
+    low: 512
+    high: 2048
   
   n_epochs:
     type: 'int'
-    low: 1
-    high: 10
+    low: 6
+    high: 15
   
   learning_rate:
     type: 'float'

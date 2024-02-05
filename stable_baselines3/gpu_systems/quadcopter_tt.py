@@ -185,7 +185,7 @@ class GPUQuadcopterTT:
 				step_count_new = th.zeros((num_done, 1), device=self.device, dtype=self.th_dtype)
 				state_new = ((th.rand((num_done, self.independent_sampling_dims.shape[0]), device=self.device, dtype=self.th_dtype) - 0.5) * (self.th_x_sample_limits_range))
 				state_new = (((self.horizon - step_count_new) / self.horizon) * state_new)
-				state_new += (self._interp_goal(step_count_new[:,0]) + th.unsqueeze(self.th_x_sample_limits_mid, dim=0))
+				state_new += (self.th_goal[step_count_new[:,0].to(dtype=th.int32),:] + th.unsqueeze(self.th_x_sample_limits_mid, dim=0))
 
 				self.step_count[done] = step_count_new[:,0]
 				self.state[done,:] = state_new
@@ -229,11 +229,11 @@ class GPUQuadcopterTT:
 		return goal
 
 	def _update_tracking_error(self):
-		goal_t = self.th_goal[self.step_count,:]
+		goal_t = self.th_goal[th.minimum(self.step_count, th.as_tensor([self.horizon-1], device=self.device, dtype=self.th_dtype)).to(device=self.device, dtype=th.int32),:]
 		self.tracking_error += th.linalg.norm((self.state - goal_t)[:,self.th_tracking_dims], dim=1, keepdim=False)
 
 	def _get_cost(self, action, state_):
-		goal_t = self.th_goal[self.step_count,:]
+		goal_t = self.th_goal[self.step_count.to(dtype=th.int32),:]
 		y = (self.state - goal_t)[:,self.th_cost_dims]
 
 		cost = th.sum((y @ self.th_Q) * y, dim=1, keepdim=False) * self.alpha_cost 
