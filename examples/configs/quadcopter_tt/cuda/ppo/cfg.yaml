@@ -29,7 +29,8 @@ algorithm:
     max_grad_norm: 0.9216909281395821
     learning_rate: 1.7723023590427873e-05
     learning_rate_schedule:
-      type: lin
+      type: kla
+      target_kl: 0.005
     n_steps: 132
     n_epochs: 15
     batch_size: 3973
