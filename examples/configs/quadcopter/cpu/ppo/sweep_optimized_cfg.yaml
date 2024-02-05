@@ -1,5 +1,5 @@
 environment:
-  name: QuadcopterSkipStep-v0
+  name: Quadcopter-v0
   num_envs: 3
   normalized_rewards: false
   environment_kwargs:
@@ -8,7 +8,6 @@ environment:
     normalized_observations: true
     alpha_cost: 1.223633355917235
     alpha_terminal_cost: 1.9898048601277891
-
 
 algorithm:
   name: PPO
@@ -31,9 +30,18 @@ algorithm:
 
 policy:
   save_prefix: model
+  type: 'ModularMlpPolicy'
   policy_kwargs:
     net_arch:
-      pi: [256, 256, 256]
+      pi:
+        - - [0]
+          - [64,64,64]
+        - - [1]
+          - [64,64,64]
+        - - [2]
+          - [64,64,64]
+        - - [3]
+          - [64,64,64]
       vf: [256, 256, 256]
     activation_fn: relu
     optimizer_class: rmsprop
