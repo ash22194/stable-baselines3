@@ -12,8 +12,8 @@ environment:
 algorithm:
   n_steps:
     type: 'int'
-    low: 20
-    high: 200
+    low: 25
+    high: 250
 
   n_epochs:
     type: 'categorical'
