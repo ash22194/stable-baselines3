@@ -161,6 +161,9 @@ class PPO(OnPolicyAlgorithm):
         self.clip_range_vf = clip_range_vf
         self.normalize_advantage = normalize_advantage
         self.target_kl = target_kl
+        if (target_kl is not None):
+            self.learning_rate_min = learning_rate / 50.
+            self.learning_rate_max = 1e-2
 
         if _init_setup_model:
             self._setup_model()
@@ -285,9 +288,9 @@ class PPO(OnPolicyAlgorithm):
                 #     break
                 if (self.target_kl is not None):
                     if (approx_kl_div > (2. * self.target_kl)):
-                        self.learning_rate = max(1e-8, self.learning_rate / 1.5)
+                        self.learning_rate = max(self.learning_rate_min, self.learning_rate / 1.5)
                     elif ((approx_kl_div < (self.target_kl / 2.)) and (approx_kl_div > 0.)):
-                        self.learning_rate = min(1e-2, self.learning_rate * 1.5)
+                        self.learning_rate = min(self.learning_rate_max, self.learning_rate * 1.5)
 
                     update_learning_rate(self.policy.optimizer, self.learning_rate)
                     self.logger.record("train/learning_rate", self.learning_rate)
