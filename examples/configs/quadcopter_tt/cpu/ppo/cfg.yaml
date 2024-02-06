@@ -13,7 +13,7 @@ environment:
     normalized_actions: true
     normalized_observations: true
     intermittent_starts: false
-    alpha_cost: 8.54
+    alpha_cost: 5.693
     alpha_action_cost: 1.139
     alpha_terminal_cost: 0.3166
 
@@ -22,7 +22,7 @@ algorithm:
   total_timesteps: 50000000
   save_every_timestep: 25000000
   algorithm_kwargs:
-    gamma: 0.9984539792726858
+    gamma: 0.99
     gae_lambda: 0.99
     ent_coef: 0.
     vf_coef: 0.5
