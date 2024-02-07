@@ -5,23 +5,20 @@ criteria:
 environment:
   num_envs:
     type: 'int'
-    low: 500
-    high: 2000
+    low: 400
+    high: 1200
     log: True
 
 algorithm:
   n_steps:
     type: 'int'
-    low: 25
-    high: 250
+    low: 40
+    high: 400
+    log: True
 
   n_epochs:
     type: 'categorical'
-    choices: [5, 10, 15]
-  
-  batch_size:
-    type: 'categorical'
-    choices: [0.1, 0.25, 0.5]
+    choices: [2, 5, 10]
   
   learning_rate:
     type: 'float'
@@ -32,6 +29,8 @@ algorithm:
   learning_rate_schedule:
     type: 'categorical'
     choices:
+      - type: 'kla'
+        target_kl: 0.0025
       - type: 'kla'
         target_kl: 0.005
       - type: 'kla'
