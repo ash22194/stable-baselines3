@@ -1,5 +1,5 @@
 environment:
-  name: QuadcopterSkipStep-v0
+  name: Quadcopter-v0
   num_envs: 3
   normalized_rewards: false
   environment_kwargs:
@@ -35,13 +35,13 @@ policy:
     net_arch:
       pi:
         - - [0]
-          - [256,256,256]
+          - [64,64,64]
         - - [1]
-          - [256,256,256]
+          - [64,64,64]
         - - [2]
-          - [256,256,256]
+          - [64,64,64]
         - - [3]
-          - [256,256,256]
+          - [64,64,64]
       vf: [256, 256, 256]
     activation_fn: relu
     optimizer_class: rmsprop
