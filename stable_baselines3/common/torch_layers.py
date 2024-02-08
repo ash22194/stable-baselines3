@@ -239,6 +239,81 @@ class MlpExtractor(nn.Module):
         return self.value_net(features)
 
 
+class DecompositionActionMlpExtractor(nn.Module):
+    def __init__(
+        self,
+        feature_dim: int,
+        net_arch: dict,
+        activation_fn: nn.ReLU,
+        device='cpu',
+        with_scaling=False
+    ):
+        super().__init__()
+        # net_arch['pi'] - [[[u_i], [x_i], [hidden_modules]] for i over the subgroups of actions]
+
+        self.selection_net = []
+        self.policy_net = []
+        self.latent_dim_pi
+        self.module_actions = []
+        input_map = []
+        for ii in range(len(net_arch['pi'])):
+            # build the linear feature selection map for the module (requires_grad = False)
+            if (type(net_arch['pi'][ii][1])==str) and (net_arch['pi'][ii][1]=='all'):
+                selection_dim = feature_dim
+                selection_layer = th.eye(selection_dim, device=device)
+            elif (type(net_arch['pi'][ii][1])==list):
+                selection_dim = len(net_arch['pi'][ii][1])
+                selection_layer = th.zeros(selection_dim, feature_dim, device=device)
+                selection_layer[:,net_arch['pi'][ii][1]] = 1.
+            else:
+                NotImplementedError
+            self.selection_layer.append(selection_layer)
+
+            # build the policy network for the module
+            input_map.append(net_arch['pi'][ii][0])
+            self.module_actions.append([net_arch['pi'][ii][0]])
+            inputs_policy_net = []
+            last_layer_dim_pi = selection_dim
+            for curr_layer_dim_pi in net_arch['pi'][ii][2]:
+                inputs_policy_net.append(nn.Linear(last_layer_dim_pi, curr_layer_dim_pi))
+                inputs_policy_net.append(activation_fn())
+                if (with_scaling):
+                    inputs_policy_net.append(ScaleLayer(curr_layer_dim))
+                last_layer_dim_pi = curr_layer_dim_pi
+            self.latent_dim_pi.append(last_layer_dim_pi)
+            self.policy_net.append(nn.Sequential(*inputs_policy_net).to(device))
+        
+        self.policy_net = nn.ModuleList(self.policy_net)
+        assert th.unique(th.as_tensor(input_map)).shape[0]==len(input_map), 'control inputs cannot belong to two policy modules'
+        self.input_map = th.zeros(len(input_map), dtype=th.int32)
+        for it in range(len(input_map)):
+            self.input_map[input_map[it]] = it
+        self.input_map = self.input_map.tolist()
+        
+        # Value network
+        last_layer_dim_vf = feature_dim
+        value_net = []
+        for curr_layer_dim_vf in net_arch['vf']:
+            value_net.append(nn.Linear(last_layer_dim_vf, curr_layer_dim_vf))
+            value_net.append(activation_fn())
+            last_layer_dim_vf = curr_layer_dim_vf
+        self.latent_dim_vf = last_layer_dim_vf
+        self.value_net = nn.Sequential(*value_net).to(device)
+    
+    def forward(self, features: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
+        """
+        :return: (th.Tensor, th.Tensor) latent_policy, latent_value of the specified network.
+            If all layers are shared, then ``latent_policy == latent_value``
+        """
+        return self.forward_actor(features), self.forward_critic(features)
+    
+    def forward_actor(self, features: th.Tensor) -> th.Tensor:
+        return [pn(sn @ features) for pn, sn in zip(self.policy_net, self.selection_net)]
+
+    def forward_critic(self, features: th.Tensor) -> th.Tensor:
+        return self.value_net(features)
+
+
 class ModularActionMlpExtractor(nn.Module):
     def __init__(
         self,
