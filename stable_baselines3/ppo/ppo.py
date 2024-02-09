@@ -203,6 +203,7 @@ class PPO(OnPolicyAlgorithm):
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
             exact_kl_divs = []
+            # analytical_kl_divs = []
             # Do a complete pass on the rollout buffer
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 actions = rollout_data.actions
@@ -272,15 +273,17 @@ class PPO(OnPolicyAlgorithm):
                     old_actions_distribution = make_proba_distribution(self.action_space, self.use_sde, dist_kwargs=self.policy.dist_kwargs)
                     old_actions_distribution = (old_actions_distribution.proba_distribution(rollout_data.actions_mu, rollout_data.actions_log_std))
 
-                    exact_kl_div = th.mean(kl_divergence(old_actions_distribution, actions_distribution)).cpu().numpy()
+                    exact_kl_div = th.mean(th.sum(kl_divergence(old_actions_distribution, actions_distribution), axis=-1)).cpu().numpy()
                     exact_kl_divs.append(exact_kl_div)
 
-                    actions_distribution = (self.policy.get_distribution(rollout_data.observations))
-                    old_actions_distribution = make_proba_distribution(self.action_space, self.use_sde, dist_kwargs=self.policy.dist_kwargs)
-                    old_actions_distribution = (old_actions_distribution.proba_distribution(rollout_data.actions_mu, rollout_data.actions_log_std))
-
-                    exact_kl_div = th.mean(kl_divergence(old_actions_distribution, actions_distribution)).cpu().numpy()
-                    exact_kl_divs.append(exact_kl_div)
+                    # analytical_kl_div = th.sum(
+                    #     th.log(actions_distribution.distribution.scale / old_actions_distribution.distribution.scale)
+                    #     + (th.square(old_actions_distribution.distribution.scale) + th.square(old_actions_distribution.distribution.mean - actions_distribution.distribution.mean))
+                    #     / (2.0 * th.square(actions_distribution.distribution.scale)) - 0.5,
+                    #     axis=-1
+                    # )
+                    # analytical_kl_div = th.mean(analytical_kl_div).cpu().numpy()
+                    # analytical_kl_divs.append(analytical_kl_div)
 
                 # if self.target_kl is not None and approx_kl_div > 1.5 * self.target_kl:
                 #     continue_training = False
@@ -313,6 +316,7 @@ class PPO(OnPolicyAlgorithm):
         self.logger.record("train/value_loss", np.mean(value_losses))
         self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
         self.logger.record("train/exact_kl", np.mean(exact_kl_divs))
+        # self.logger.record("train/analytical_kl", np.mean(analytical_kl_divs))
         self.logger.record("train/clip_fraction", np.mean(clip_fractions))
         self.logger.record("train/loss", loss.item())
         if type(self.rollout_buffer)==RolloutBuffer:
