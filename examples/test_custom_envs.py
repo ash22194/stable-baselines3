@@ -12,11 +12,16 @@ from scipy.linalg import solve_discrete_are, expm
 from stable_baselines3 import A2CwReg, PPO
 from stable_baselines3.common.env_checker import check_env
 
-def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=False, record=False):
+def evaluate_model(model, test_env: gym.Env, num_episodes: int, starts=None, print_outcomes=False, record=False):
+	if (starts is None):
+		start_states = np.zeros((test_env.X_DIMS, num_episodes))
+	else:
+		start_states = starts
+		num_episodes = starts.shape[0]
+	
 	ep_reward = np.zeros(num_episodes)
 	ep_discounted_reward = np.zeros(num_episodes)
 	final_err = np.zeros(num_episodes)
-	start_states = np.zeros((test_env.X_DIMS, num_episodes))
 
 	for ee in range(num_episodes):
 		if (os.path.isdir(record)):
@@ -51,6 +56,12 @@ def evaluate_model(model, test_env: gym.Env, num_episodes: int, print_outcomes=F
 				print('---Reward (discounted) : %f (%f)' % (ep_reward[ee], ep_discounted_reward[ee]))
 				print('---Final : %f' % final_err[ee])
 				print()
+
+	if (print_outcomes):
+		with np.printoptions(precision=3, suppress=True):
+			print('Average statistics :')
+			print('---Reward (discounted) : %f (%f)' % (np.mean(ep_reward), np.mean(ep_discounted_reward)))
+			print('---Final : %f' % np.mean(final_err))
 
 	return ep_reward, ep_discounted_reward, final_err, start_states
 
@@ -145,18 +156,30 @@ def evaluate_lqr_controller(starts, test_env: gym.Env, num_episodes: int, print_
 				print('---Final : %f' % final_err[ee])
 				print()
 
+	if (print_outcomes):
+		with np.printoptions(precision=3, suppress=True):
+			print('Average statistics :')
+			print('---Reward (discounted) : %f (%f)' % (np.mean(ep_reward), np.mean(ep_discounted_reward)))
+			print('---Final : %f' % np.mean(final_err))
+
 	return ep_reward, ep_discounted_reward, final_err
 
 def main():
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--load_dir', type=str, default='', help='directory to load the model from')
+	parser.add_argument('--test_starts', type=str, default='', help='npy file with start configs to test from')
 	parser.add_argument('--num_rollouts', type=int, default=10, help='number of episodes to rollout')
 	parser.add_argument('--record', default=False, action='store_true', help='record the rollouts?')
 	parser.add_argument('--evaluate_lqr', default=False, action='store_true', help='compare against an lqr controller?')
 
 	args = parser.parse_args()
 	load_dir = args.load_dir
+	starts = args.test_starts
+	if (os.path.isfile(starts) and starts.endswith('.npy')):
+		starts = np.load(starts, allow_pickle=False, mmap_mode=None)
+	else:
+		starts = None
 	record = args.record
 	if (record):
 		record = load_dir
@@ -186,9 +209,12 @@ def main():
 	elif (cfg['algorithm']['name'] == 'A2C'):
 		pass
 	test_env.gamma_ = model.gamma
-	_, _, _, starts = evaluate_model(model, test_env, num_episodes=args.num_rollouts, print_outcomes=True, record=record)
+	_, _, _, starts = evaluate_model(model, test_env, num_episodes=args.num_rollouts, starts=starts, print_outcomes=True, record=record)
 	if (args.evaluate_lqr):
 		evaluate_lqr_controller(starts, test_env, num_episodes=starts.shape[1], print_outcomes=True, record=record)
+
+	# if (record):
+	np.save(os.path.join(load_dir, 'test_starts.npy'), starts, allow_pickle=False)
 
 if __name__=='__main__':
 	main()
