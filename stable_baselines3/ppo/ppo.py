@@ -291,9 +291,9 @@ class PPO(OnPolicyAlgorithm):
                 #         print(f"Early stopping at step {epoch} due to reaching max kl: {approx_kl_div:.2f}")
                 #     break
                 if (self.target_kl is not None):
-                    if (approx_kl_div > (2. * self.target_kl)):
+                    if (exact_kl_div > (2. * self.target_kl)):
                         self.learning_rate = max(self.learning_rate_min, self.learning_rate / 1.5)
-                    elif ((approx_kl_div < (self.target_kl / 2.)) and (approx_kl_div > 0.)):
+                    elif ((exact_kl_div < (self.target_kl / 2.)) and (exact_kl_div > 0.)):
                         self.learning_rate = min(self.learning_rate_max, self.learning_rate * 1.5)
 
                     update_learning_rate(self.policy.optimizer, self.learning_rate)
