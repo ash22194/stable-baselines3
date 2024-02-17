@@ -18,7 +18,7 @@ algorithm:
 
   n_epochs:
     type: 'categorical'
-    choices: [2, 5, 10]
+    choices: [5, 10, 15]
   
   learning_rate:
     type: 'float'
@@ -26,20 +26,10 @@ algorithm:
     high: 0.001
     log: True
   
-  learning_rate_schedule:
-    type: 'categorical'
-    choices:
-      - type: 'kla'
-        target_kl: 0.0025
-      - type: 'kla'
-        target_kl: 0.005
-      - type: 'kla'
-        target_kl: 0.0075
-  
   ent_coef:
     type: 'float'
     low: 0.000001
-    high: 0.01
+    high: 0.1
     log: True
 
 policy:

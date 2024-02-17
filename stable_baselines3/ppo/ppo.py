@@ -163,7 +163,7 @@ class PPO(OnPolicyAlgorithm):
         self.normalize_advantage = normalize_advantage
         self.target_kl = target_kl
         if (target_kl is not None):
-            self.learning_rate_min = learning_rate / 50.
+            self.learning_rate_min = learning_rate / 1000.
             self.learning_rate_max = 1e-2
 
         if _init_setup_model:
