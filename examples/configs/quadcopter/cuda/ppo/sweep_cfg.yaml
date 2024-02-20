@@ -26,10 +26,14 @@ algorithm:
     high: 0.001
     log: True
   
+  clip_range:
+    type: 'categorical'
+    choices: [0.1, 0.2, 0.3]
+
   ent_coef:
     type: 'float'
     low: 0.000001
-    high: 0.1
+    high: 0.01
     log: True
 
 policy:
