@@ -4,7 +4,7 @@ import gymnasium as gym
 import torch as th
 from gymnasium import spaces
 from torch import nn
-
+from ipdb import set_trace
 from stable_baselines3.common.preprocessing import get_flattened_obs_dim, is_image_space
 from stable_baselines3.common.type_aliases import TensorDict
 from stable_baselines3.common.utils import get_device
@@ -253,24 +253,24 @@ class DecompositionActionMlpExtractor(nn.Module):
 
         self.selection_net = []
         self.policy_net = []
-        self.latent_dim_pi
+        self.latent_dim_pi = []
         self.module_actions = []
-        input_map = []
+        module_action_map = []
         for ii in range(len(net_arch['pi'])):
             # build the linear feature selection map for the module (requires_grad = False)
             if (type(net_arch['pi'][ii][1])==str) and (net_arch['pi'][ii][1]=='all'):
                 selection_dim = feature_dim
-                selection_layer = th.eye(selection_dim, device=device)
+                selection_layer = th.eye(feature_dim, device=device)
             elif (type(net_arch['pi'][ii][1])==list):
                 selection_dim = len(net_arch['pi'][ii][1])
-                selection_layer = th.zeros(selection_dim, feature_dim, device=device)
-                selection_layer[:,net_arch['pi'][ii][1]] = 1.
+                selection_layer = th.eye(feature_dim, device=device)
+                selection_layer = selection_layer[:,net_arch['pi'][ii][1]]
             else:
                 NotImplementedError
-            self.selection_layer.append(selection_layer)
+            self.selection_net.append(selection_layer)
 
             # build the policy network for the module
-            input_map.append(net_arch['pi'][ii][0])
+            module_action_map.append(net_arch['pi'][ii][0])
             self.module_actions.append([net_arch['pi'][ii][0]])
             inputs_policy_net = []
             last_layer_dim_pi = selection_dim
@@ -284,12 +284,12 @@ class DecompositionActionMlpExtractor(nn.Module):
             self.policy_net.append(nn.Sequential(*inputs_policy_net).to(device))
         
         self.policy_net = nn.ModuleList(self.policy_net)
-        assert th.unique(th.as_tensor(input_map)).shape[0]==len(input_map), 'control inputs cannot belong to two policy modules'
-        self.input_map = th.zeros(len(input_map), dtype=th.int32)
-        for it in range(len(input_map)):
-            self.input_map[input_map[it]] = it
-        self.input_map = self.input_map.tolist()
-        
+        module_action_map = th.concatenate(tuple([th.asarray(mm) for mm in module_action_map]))
+        assert th.unique(module_action_map).shape[0]==module_action_map.shape[0], 'control inputs cannot belong to two policy modules'
+        self.module_action_map = th.zeros(module_action_map.shape[0], dtype=th.int32)
+        self.module_action_map[module_action_map] = th.arange(module_action_map.shape[0], dtype=th.int32)
+        self.module_action_map = self.module_action_map.tolist()
+
         # Value network
         last_layer_dim_vf = feature_dim
         value_net = []
@@ -308,7 +308,7 @@ class DecompositionActionMlpExtractor(nn.Module):
         return self.forward_actor(features), self.forward_critic(features)
     
     def forward_actor(self, features: th.Tensor) -> th.Tensor:
-        return [pn(sn @ features) for pn, sn in zip(self.policy_net, self.selection_net)]
+        return [pn(features @ sn) for pn, sn in zip(self.policy_net, self.selection_net)]
 
     def forward_critic(self, features: th.Tensor) -> th.Tensor:
         return self.value_net(features)
@@ -349,10 +349,10 @@ class ModularActionMlpExtractor(nn.Module):
             self.policy_net.append(nn.Sequential(*inputs_policy_net).to(device))
         self.policy_net = nn.ModuleList(self.policy_net)
 
-        assert th.unique(th.as_tensor(input_map)).shape[0]==len(input_map), 'control inputs cannot belong to two policy modules'
-        self.input_map = th.zeros(len(input_map), dtype=th.int32)
-        for it in range(len(input_map)):
-            self.input_map[input_map[it]] = it
+        input_map = th.concatenate(tuple([th.asarray(mm) for mm in input_map]))
+        assert th.unique(input_map).shape[0]==input_map.shape[0], 'control inputs cannot belong to two policy modules'
+        self.input_map = th.zeros(input_map.shape[0], dtype=th.int32)
+        self.input_map[input_map] = th.arange(input_map.shape[0], dtype=th.int32)
         self.input_map = self.input_map.tolist()
 
         # Value network

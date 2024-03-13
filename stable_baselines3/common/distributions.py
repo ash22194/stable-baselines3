@@ -129,9 +129,19 @@ class DiagGaussianDistribution(Distribution):
     :param action_dim:  Dimension of the action space.
     """
 
-    def __init__(self, action_dim: int):
+    def __init__(self, action_dim: int, fixed_dims=None):
         super().__init__()
         self.action_dim = action_dim
+        
+        self.mask = th.ones(action_dim)
+        self.offset = th.zeros(action_dim)
+        if (type(fixed_dims)==list):
+            assert np.all([fd < action_dim for fd in fixed_dims])
+            self.mask[fixed_dims] = 0.
+            self.offset[fixed_dims] = 1e-5
+        elif (fixed_dims is not None):
+            ValueError
+
         self.mean_actions = None
         self.log_std = None
 
@@ -160,7 +170,7 @@ class DiagGaussianDistribution(Distribution):
         :param log_std:
         :return:
         """
-        action_std = th.ones_like(mean_actions) * log_std.exp()
+        action_std = th.ones_like(mean_actions) * (log_std.exp() * self.mask + self.offset)
         self.distribution = Normal(mean_actions, action_std)
         return self
 

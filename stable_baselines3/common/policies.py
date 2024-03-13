@@ -29,6 +29,7 @@ from stable_baselines3.common.torch_layers import (
     FlattenExtractor,
     MlpExtractor,
     ModularActionMlpExtractor,
+    DecompositionActionMlpExtractor,
     NatureCNN,
     create_mlp,
 )
@@ -772,7 +773,7 @@ class DecompositionActorCriticPolicy(BasePolicy):
     def __init__(
         self,
         observation_space: spaces.Space,
-        active_action_space: spaces.Space,
+        action_space: spaces.Space,
         lr_schedule: Schedule,
         net_arch: Dict[str, List] = None,
         activation_fn: Type[nn.Module] = nn.Tanh,
@@ -798,7 +799,7 @@ class DecompositionActorCriticPolicy(BasePolicy):
 
         super().__init__(
             observation_space,
-            active_action_space,
+            action_space,
             features_extractor_class,
             features_extractor_kwargs,
             optimizer_class=optimizer_class,
@@ -809,6 +810,22 @@ class DecompositionActorCriticPolicy(BasePolicy):
 
         assert isinstance(net_arch, Dict) and ('pi' in net_arch.keys()) and ('vf' in net_arch.keys()), 'net_arch must be a dict with keys pi and vf'
         assert sum([len(in_module[0]) for in_module in net_arch['pi']])==get_action_dim(action_space), 'number of action modules must be the same as the number of control inputs'
+        # Find if any outputs need to have fixed actions/almost zero standard deviation
+        num_active_actions = 0
+        fixed_action_dims = []
+        for aa in net_arch['pi']:
+            if (aa[3]=='a'):
+                num_active_actions += len(aa[0])
+            elif (aa[3]=='c'):
+                assert len(aa[2])==0, 'Constant policy modules cannot have any hidden layers'
+                fixed_action_dims += aa[0]
+            elif (aa[3]=='f'):
+                fixed_action_dims += aa[0]
+            else:
+                ValueError
+        assert num_active_actions <= get_action_dim(action_space)
+
+        dist_kwargs = dict(fixed_dims=fixed_action_dims)
 
         self.net_arch = net_arch
         self.activation_fn = activation_fn
@@ -826,17 +843,15 @@ class DecompositionActorCriticPolicy(BasePolicy):
             self.vf_features_extractor = self.make_features_extractor()
 
         self.log_std_init = log_std_init
-        dist_kwargs = None
 
         assert not squash_output, "squash_output is currently not supported for modular policies"
         assert not use_sde, "sde is currently not supported for modular policies"
-        # Keyword arguments for gSDE distribution
 
         self.use_sde = use_sde
         self.dist_kwargs = dist_kwargs
 
         # Action distribution
-        self.action_dist = make_proba_distribution(active_action_space, use_sde=use_sde, dist_kwargs=dist_kwargs)
+        self.action_dist = make_proba_distribution(action_space, use_sde=use_sde, dist_kwargs=dist_kwargs)
 
         self._build(lr_schedule)
 
@@ -880,7 +895,7 @@ class DecompositionActorCriticPolicy(BasePolicy):
         # Note: If net_arch is None and some features extractor is used,
         #       net_arch here is an empty list and mlp_extractor does not
         #       really contain any layers (acts like an identity module).
-        self.mlp_extractor = ModularActionMlpExtractor(
+        self.mlp_extractor = DecompositionActionMlpExtractor(
             self.features_dim,
             net_arch=self.net_arch,
             activation_fn=self.activation_fn,
@@ -898,8 +913,8 @@ class DecompositionActorCriticPolicy(BasePolicy):
         self._build_mlp_extractor()
 
         if isinstance(self.action_dist, DiagGaussianDistribution):
-            assert sum(self.mlp_extractor.module_action_dim) == get_action_dim(self.action_space), 'Outputs of the action modules must be of the same dimension as the action space'
-            self.action_net = nn.ModuleList([nn.Linear(ld_pi, mad_pi) for ld_pi, mad_pi in zip(self.mlp_extractor.latent_dim_pi, self.mlp_extractor.module_action_dim)])
+            assert len(self.mlp_extractor.module_action_map) == get_action_dim(self.action_space), 'Outputs of the action modules must be of the same dimension as the action space'
+            self.action_net = nn.ModuleList([nn.Linear(ld_pi, len(n_arch_pi[0])) for ld_pi, n_arch_pi in zip(self.mlp_extractor.latent_dim_pi, self.net_arch['pi'])])
             # Define noise for the active action space
             self.log_std = nn.Parameter(th.ones(get_action_dim(self.action_space)) * self.log_std_init, requires_grad=True)
         else:
@@ -908,11 +923,11 @@ class DecompositionActorCriticPolicy(BasePolicy):
         self.value_net = nn.Linear(self.mlp_extractor.latent_dim_vf, 1)
 
         # Freeze policy modules that are supposed to be inactive
-        for ipn, pn in enumerate(self.net_arch):
+        for ipn, pn in enumerate(self.net_arch['pi']):
             if (pn[3] == 'f') or (pn[3] == 'c'):
                 # the module weights are frozen
-                self.policy_net[ipn].requires_grad_(False)
-                self.aciton_net[ipn].requires_grad_(False)
+                self.mlp_extractor.policy_net[ipn].requires_grad_(False)
+                self.action_net[ipn].requires_grad_(False)
 
             elif not (pn[3]=='a'):
                 # the module is neither active nor constant nor frozen
@@ -927,11 +942,12 @@ class DecompositionActorCriticPolicy(BasePolicy):
             # originally from openai/baselines (default gains/init_scales).
             module_gains = {
                 self.features_extractor: np.sqrt(2),
+                self.mlp_extractor.value_net: np.sqrt(2),
                 self.value_net: 1,
             }
-            for ipn, pn in enumerate(self.net_arch):
+            for ipn, pn in enumerate(self.net_arch['pi']):
                 if (pn[3]=='a'):
-                    module_gains[self.policy_net[ipn]] = 0.01
+                    module_gains[self.mlp_extractor.policy_net[ipn]] = np.sqrt(2)
                     module_gains[self.action_net[ipn]] = 0.01
 
             if not self.share_features_extractor:
@@ -954,23 +970,33 @@ class DecompositionActorCriticPolicy(BasePolicy):
         """
         weights = OrderedDict()
         # Policy network
+        weights['policy_net'] = dict()
         for im, mm in enumerate(self.mlp_extractor.policy_net):
+            weights['policy_net'][im] = []
             for mmi in mm.named_parameters():
-                weights['policy-net/module_%d'%im+mmi[0]] = mmi[1]
-        for im, mm in enumerate(self.action_net):
-            for mmi in mm.named_parameters():
-                weights['policy-net/out/module_%d'%im+mmi[0]] = mmi[1]
+                weights['policy_net'][im].append(mmi)
 
-        # Value netowork
+        weights['action_net'] = dict()
+        for im, mm in enumerate(self.action_net):
+            weights['action_net'][im] = []
+            for mmi in mm.named_parameters():
+                weights['action_net'][im].append(mmi)
+
+        # Value network
+        weights['policy_value_net'] = []
         for mm in self.mlp_extractor.value_net.named_parameters():
-            weights['value-net/'+mm[0]] = mm[1]
+            weights['policy_value_net'].append(mm)
+        weights['value_net'] = []
         for mm in self.value_net.named_parameters():
-            weights['value-net/out/'+mm[0]] = mm[1]
+            weights['value_net'].append(mm)
 
         return weights
-    
-    def set_module_weights(self, weight_dict):
-        pass
+
+    def set_weights(self, weight_dict):
+        sd = self.state_dict()
+        for k in weight_dict.keys():
+            assert k in sd.keys(), "layer %s missing in the model"%k
+        self.load_state_dict(weight_dict, strict=False, assign=False)
 
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> Tuple[th.Tensor, th.Tensor, th.Tensor]:
         """
@@ -1021,7 +1047,7 @@ class DecompositionActorCriticPolicy(BasePolicy):
         for ilp, lp in enumerate(latent_pi):
             mean_actions.append(self.action_net[ilp](lp))
         mean_actions = th.cat(mean_actions, dim=-1)
-        mean_actions = mean_actions[...,self.mlp_extractor.input_map]
+        mean_actions = mean_actions[...,self.mlp_extractor.module_action_map]
 
         if isinstance(self.action_dist, DiagGaussianDistribution):
             return self.action_dist.proba_distribution(mean_actions, self.log_std)
