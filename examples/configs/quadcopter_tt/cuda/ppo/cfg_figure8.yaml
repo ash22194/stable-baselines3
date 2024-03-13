@@ -1,7 +1,7 @@
 environment:
   name: GPUQuadcopterTT
   eval_envname: QuadcopterTT
-  num_envs: 602
+  num_envs: 485
   normalized_rewards: false
   environment_kwargs:
     trajectory_file: 'trajectory_figure8_wider.mat'
@@ -18,21 +18,22 @@ environment:
 
 algorithm:
   name: PPO
-  total_timesteps: 90000000
-  save_every_timestep: 90000000
+  total_timesteps: 60000000
+  save_every_timestep: 60000000
   algorithm_kwargs:
     gamma: 0.9984539792726858
     gae_lambda: 0.99
-    ent_coef: 0.0009916153167506478
+    ent_coef: 0.006001108430590402
     vf_coef: 0.5
     normalize_advantage: false
     max_grad_norm: 0.9216909281395821
-    learning_rate: 1.7723023590427873e-05
+    learning_rate: 0.0008332817460540247
     learning_rate_schedule:
-      type: lin
-    n_steps: 132
-    n_epochs: 15
-    batch_size: 3973
+      type: kla
+      target_kl: 0.0025
+    n_steps: 188
+    n_epochs: 10
+    batch_size: 22795
     clip_range: 0.2
 
 policy:
@@ -43,5 +44,5 @@ policy:
       vf: [256, 256, 256]
     activation_fn: relu
     optimizer_class: rmsprop
-    log_std_init: -0.034578540624727594
+    log_std_init: -0.058907298012316735
     ortho_init: true

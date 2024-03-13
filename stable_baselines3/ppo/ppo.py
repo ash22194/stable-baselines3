@@ -164,7 +164,7 @@ class PPO(OnPolicyAlgorithm):
         self.normalize_advantage = normalize_advantage
         self.target_kl = target_kl
         if (target_kl is not None):
-            self.learning_rate_min = learning_rate / 50.
+            self.learning_rate_min = learning_rate / 1000.
             self.learning_rate_max = 1e-2
 
         if _init_setup_model:
@@ -204,6 +204,7 @@ class PPO(OnPolicyAlgorithm):
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
             exact_kl_divs = []
+            # analytical_kl_divs = []
             # Do a complete pass on the rollout buffer
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 actions = rollout_data.actions
@@ -273,15 +274,17 @@ class PPO(OnPolicyAlgorithm):
                     old_actions_distribution = make_proba_distribution(self.action_space, self.use_sde, dist_kwargs=self.policy.dist_kwargs)
                     old_actions_distribution = (old_actions_distribution.proba_distribution(rollout_data.actions_mu, rollout_data.actions_log_std))
 
-                    exact_kl_div = th.mean(kl_divergence(old_actions_distribution, actions_distribution)).cpu().numpy()
+                    exact_kl_div = th.mean(th.sum(kl_divergence(old_actions_distribution, actions_distribution), axis=-1)).cpu().numpy()
                     exact_kl_divs.append(exact_kl_div)
 
-                    actions_distribution = (self.policy.get_distribution(rollout_data.observations))
-                    old_actions_distribution = make_proba_distribution(self.action_space, self.use_sde, dist_kwargs=self.policy.dist_kwargs)
-                    old_actions_distribution = (old_actions_distribution.proba_distribution(rollout_data.actions_mu, rollout_data.actions_log_std))
-
-                    exact_kl_div = th.mean(kl_divergence(old_actions_distribution, actions_distribution)).cpu().numpy()
-                    exact_kl_divs.append(exact_kl_div)
+                    # analytical_kl_div = th.sum(
+                    #     th.log(actions_distribution.distribution.scale / old_actions_distribution.distribution.scale)
+                    #     + (th.square(old_actions_distribution.distribution.scale) + th.square(old_actions_distribution.distribution.mean - actions_distribution.distribution.mean))
+                    #     / (2.0 * th.square(actions_distribution.distribution.scale)) - 0.5,
+                    #     axis=-1
+                    # )
+                    # analytical_kl_div = th.mean(analytical_kl_div).cpu().numpy()
+                    # analytical_kl_divs.append(analytical_kl_div)
 
                 # if self.target_kl is not None and approx_kl_div > 1.5 * self.target_kl:
                 #     continue_training = False
@@ -289,9 +292,9 @@ class PPO(OnPolicyAlgorithm):
                 #         print(f"Early stopping at step {epoch} due to reaching max kl: {approx_kl_div:.2f}")
                 #     break
                 if (self.target_kl is not None):
-                    if (approx_kl_div > (2. * self.target_kl)):
+                    if (exact_kl_div > (2. * self.target_kl)):
                         self.learning_rate = max(self.learning_rate_min, self.learning_rate / 1.5)
-                    elif ((approx_kl_div < (self.target_kl / 2.)) and (approx_kl_div > 0.)):
+                    elif ((exact_kl_div < (self.target_kl / 2.)) and (exact_kl_div > 0.)):
                         self.learning_rate = min(self.learning_rate_max, self.learning_rate * 1.5)
 
                     update_learning_rate(self.policy.optimizer, self.learning_rate)
@@ -314,6 +317,7 @@ class PPO(OnPolicyAlgorithm):
         self.logger.record("train/value_loss", np.mean(value_losses))
         self.logger.record("train/approx_kl", np.mean(approx_kl_divs))
         self.logger.record("train/exact_kl", np.mean(exact_kl_divs))
+        # self.logger.record("train/analytical_kl", np.mean(analytical_kl_divs))
         self.logger.record("train/clip_fraction", np.mean(clip_fractions))
         self.logger.record("train/loss", loss.item())
         if type(self.rollout_buffer)==RolloutBuffer:

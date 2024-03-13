@@ -223,6 +223,9 @@ def initialize_model(cfg: Dict, save_dir: str, env_device: str):
 		elif (learning_rate_schedule['type'] == 'sawt'):
 			learning_rate = decay_sawtooth_schedule(learning_rate, learning_rate_schedule['sawtooth_width'])
 		elif (learning_rate_schedule['type'] == 'kla'):
+			if (learning_rate_schedule['target_kl']==None):
+				clip_range = algorithm_args['algorithm_kwargs'].get('clip_range', 0.2)
+				learning_rate_schedule['target_kl'] = (clip_range**2)/4
 			algorithm_args['algorithm_kwargs']['target_kl'] = learning_rate_schedule['target_kl']
 		algorithm_args['algorithm_kwargs']['learning_rate'] = learning_rate
 
