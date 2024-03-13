@@ -533,6 +533,226 @@ class EvalCallback(EventCallback):
 			self.callback.update_locals(locals_)
 
 
+class CustomEvalCallback(EventCallback):
+
+	def __init__(
+		self,
+		eval_env: Union[gym.Env, VecEnv],
+		callback_on_new_best: Optional[BaseCallback] = None,
+		callback_after_eval: Optional[BaseCallback] = None,
+		n_eval_episodes: int = 5,
+		eval_freq: int = 10000,
+		log_path: Optional[str] = None,
+		best_model_save_path: Optional[str] = None,
+		deterministic: bool = True,
+		render: bool = False,
+		verbose: int = 1,
+		warn: bool = True,
+		fixed_starts = True,
+		save_model = False
+	):
+		super().__init__(callback_after_eval, verbose=verbose)
+
+		self.callback_on_new_best = callback_on_new_best
+		if self.callback_on_new_best is not None:
+			# Give access to the parent
+			self.callback_on_new_best.parent = self
+
+		self.n_eval_episodes = n_eval_episodes
+		self.eval_freq = eval_freq
+		self.best_mean_reward = -np.inf
+		self.last_mean_reward = -np.inf
+		self.deterministic = deterministic
+		self.render = render
+		self.warn = warn
+		self.save_model = save_model
+		self.curr_check_point_id = 0
+
+		self.eval_env = eval_env
+		self.best_model_save_path = best_model_save_path
+		if (os.path.isfile(fixed_starts)):
+			assert fixed_starts.endswith('.npy'), 'If supplying a file to load starts from, it must be .npy'
+			self.fixed_starts = np.load(fixed_starts, allow_pickle=False, mmap_mode=None)
+		elif (fixed_starts is True):
+			self.fixed_starts = []
+			for n in range(n_eval_episodes):
+				self.eval_env.reset()
+				self.fixed_starts += [self.eval_env.state.copy()]
+			self.fixed_starts = np.array(fixed_starts)
+			# save the sampled fixed starts
+			np.save(os.path.join(log_path, 'test_starts.npy'), self.fixed_starts, allow_pickle=False)
+		else:
+			self.fixed_starts = np.array([None for ii in range(n_eval_episodes)])
+
+		# Logs will be written in ``evaluations.npz``
+		if log_path is not None:
+			log_path = os.path.join(log_path, "evaluations")
+		self.log_path = log_path
+		self.evaluations_results: List[List[float]] = []
+		self.evaluations_timesteps: List[int] = []
+		self.evaluations_length: List[List[int]] = []
+		# For computing success rate
+		self._is_success_buffer: List[bool] = []
+		self.evaluations_successes: List[List[bool]] = []
+		
+	def _init_callback(self) -> None:
+		# Does not work in some corner cases, where the wrapper is not the same
+		if not isinstance(self.training_env, type(self.eval_env)):
+			warnings.warn("Training and eval env are not of the same type" f"{self.training_env} != {self.eval_env}")
+
+		# Create folders if needed
+		if self.best_model_save_path is not None:
+			os.makedirs(self.best_model_save_path, exist_ok=True)
+		if self.log_path is not None:
+			os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+
+		# Init callback called on new best model
+		if self.callback_on_new_best is not None:
+			self.callback_on_new_best.init_callback(self.model)
+
+	def _log_success_callback(self, locals_: Dict[str, Any], globals_: Dict[str, Any]) -> None:
+		"""
+		Callback passed to the  ``evaluate_policy`` function
+		in order to log the success rate (when applicable),
+		for instance when using HER.
+
+		:param locals_:
+		:param globals_:
+		"""
+		info = locals_["info"]
+
+		if locals_["done"]:
+			maybe_is_success = info.get("is_success")
+			if maybe_is_success is not None:
+				self._is_success_buffer.append(maybe_is_success)
+
+	def _on_step(self):
+
+		continue_training = True
+
+		if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+			# Sync training and eval env if there is VecNormalize
+			if self.model.get_vec_normalize_env() is not None:
+				try:
+					sync_envs_normalization(self.training_env, self.eval_env)
+				except AttributeError as e:
+					raise AssertionError(
+						"Training and eval env are not wrapped the same way, "
+						"see https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html#evalcallback "
+						"and warning above."
+					) from e
+
+			# Reset success rate buffer
+			self._is_success_buffer = []
+
+			episode_rewards, episode_lengths = self._evaluate_policy()
+
+			if self.log_path is not None:
+				assert isinstance(episode_rewards, list)
+				assert isinstance(episode_lengths, list)
+				self.evaluations_timesteps.append(self.num_timesteps)
+				self.evaluations_results.append(episode_rewards)
+				self.evaluations_length.append(episode_lengths)
+
+				kwargs = {}
+				# Save success log if present
+				if len(self._is_success_buffer) > 0:
+					self.evaluations_successes.append(self._is_success_buffer)
+					kwargs = dict(successes=self.evaluations_successes)
+
+				np.savez(
+					self.log_path,
+					timesteps=self.evaluations_timesteps,
+					results=self.evaluations_results,
+					ep_lengths=self.evaluations_length,
+					**kwargs,
+				)
+
+				# save model
+				if (self.save_model):
+					check_point_id = divmod(self.model.num_timesteps+1, self.eval_freq)[0]
+					if (check_point_id > self.curr_check_point_id):
+						self.curr_check_point_id = check_point_id
+						save_id = check_point_id*self.eval_freq
+						self.model.save(os.path.join(self.log_path, 'model_' + str(save_id)))
+
+			mean_reward, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
+			mean_ep_length, std_ep_length = np.mean(episode_lengths), np.std(episode_lengths)
+			self.last_mean_reward = float(mean_reward)
+
+			if self.verbose >= 1:
+				print(f"Eval num_timesteps={self.num_timesteps}, " f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}")
+				print(f"Episode length: {mean_ep_length:.2f} +/- {std_ep_length:.2f}")
+			# Add to current Logger
+			self.logger.record("eval/mean_reward", float(mean_reward))
+			self.logger.record("eval/mean_ep_length", mean_ep_length)
+
+			if len(self._is_success_buffer) > 0:
+				success_rate = np.mean(self._is_success_buffer)
+				if self.verbose >= 1:
+					print(f"Success rate: {100 * success_rate:.2f}%")
+				self.logger.record("eval/success_rate", success_rate)
+
+			# Dump log so the evaluation results are printed with the correct timestep
+			self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
+			self.logger.dump(self.num_timesteps)
+
+			if mean_reward > self.best_mean_reward:
+				if self.verbose >= 1:
+					print("New best mean reward!")
+				if self.best_model_save_path is not None:
+					self.model.save(os.path.join(self.best_model_save_path, "best_model"))
+				self.best_mean_reward = float(mean_reward)
+				# Trigger callback on new best model, if needed
+				if self.callback_on_new_best is not None:
+					continue_training = self.callback_on_new_best.on_step()
+
+			# Trigger callback after every evaluation, if needed
+			if self.callback is not None:
+				continue_training = continue_training and self._on_event()
+
+		return continue_training
+	
+	def _evaluate_policy(self):
+
+		episode_rewards = []
+		episode_discounted_rewards = []
+		episode_lengths = []
+
+		for ep in range(self.n_eval_episodes):
+			obs, _ = self.eval_env.reset()
+			done = False
+			discount = 1
+			ep_reward = 0
+			ep_discounted_reward = 0
+			ep_length = 0
+			while (not done):
+				action, _state = self.model.predict(obs, deterministic=self.deterministic)
+				obs, reward, done, _, info = self.eval_env.step(action)
+
+				self._log_success_callback(locals(), globals())
+
+				ep_reward += reward
+				ep_discounted_reward += (discount*reward)
+				ep_length += 1
+				discount *= self.model.gamma
+
+			episode_rewards.append(ep_reward)
+			episode_discounted_rewards.append(ep_discounted_reward)
+			episode_lengths.append(ep_length)
+
+		return episode_discounted_rewards, episode_lengths
+	
+	def update_child_locals(self, locals_: Dict[str, Any]) -> None:
+		"""
+		Update the references to the local variables.
+
+		:param locals_: the local variables during rollout collection
+		"""
+		if self.callback:
+			self.callback.update_locals(locals_)
+
+
 class StopTrainingOnRewardThreshold(BaseCallback):
 	"""
 	Stop the training once a threshold in episodic reward
@@ -713,7 +933,7 @@ class CustomSaveLogCallback(BaseCallback):
 
 	:param verbose: (int) Verbosity level 0: not output 1: info 2: debug
 	"""
-	def __init__(self, save_every_timestep, save_path, save_prefix='model', verbose=0):
+	def __init__(self, save_every_timestep, save_path, save_prefix='model', verbose=0, termination=None):
 		super(CustomSaveLogCallback, self).__init__(verbose)
 		self.save_every_timestep = save_every_timestep
 
@@ -721,6 +941,11 @@ class CustomSaveLogCallback(BaseCallback):
 		self.save_path = save_path
 		self.save_prefix = save_prefix
 		self.curr_check_point_id = 0
+		if type(termination)==dict:
+			self.termination_criteria = termination.get('criteria', 'reward')
+			self.termination_threshold = termination.get('threshold', 0.025)
+			self.termination_criteria_count = 0
+			self.termination_repeat = termination.get('repeat', 10)
 
 	def _on_training_start(self) -> None:
 		pass
@@ -744,10 +969,31 @@ class CustomSaveLogCallback(BaseCallback):
 			save_id = check_point_id*self.save_every_timestep
 			self.model.save(os.path.join(self.save_path, self.save_prefix + '_' + str(save_id)))
 
-		return True
+		continue_training = True
+		if (self.termination_criteria_count >= self.termination_repeat):
+			continue_training = False
+
+		return continue_training
 
 	def _on_rollout_end(self) -> None:
-		pass
+		if (hasattr(self, "termination_criteria") and hasattr(self.model, 'ep_info_buffer')):
+			if (self.termination_criteria == "reward"):
+				mean_criteria = np.mean([info["r"] for info in self.model.ep_info_buffer if (("r" in info.keys()) and (not np.isnan(info["r"])))])
+			else:
+				NotImplementedError
+
+			if (hasattr(self, "mean_criteria_last")):
+				delta = mean_criteria - self.mean_criteria_last
+				self.logger.record('rollout/delta_termination_criteria', delta)
+				self.mean_criteria_last = mean_criteria
+				if (np.abs(delta) < self.termination_threshold):
+					self.termination_criteria_count += 1
+				elif (delta > self.termination_threshold):
+					self.termination_criteria_count = 0
+			else:
+				self.mean_criteria_last = mean_criteria
+				self.termination_criteria_count = 0	
+			self.logger.record('rollout/termination_criteria_count', self.termination_criteria_count)
 
 	def _on_training_end(self) -> None:
 		pass
