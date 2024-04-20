@@ -570,10 +570,7 @@ class CustomEvalCallback(EventCallback):
 
 		self.eval_env = eval_env
 		self.best_model_save_path = best_model_save_path
-		if (os.path.isfile(fixed_starts)):
-			assert fixed_starts.endswith('.npy'), 'If supplying a file to load starts from, it must be .npy'
-			self.fixed_starts = np.load(fixed_starts, allow_pickle=False, mmap_mode=None)
-		elif (fixed_starts is True):
+		if (type(fixed_starts)==bool) and (fixed_starts):
 			self.fixed_starts = []
 			for n in range(n_eval_episodes):
 				self.eval_env.reset()
@@ -581,6 +578,9 @@ class CustomEvalCallback(EventCallback):
 			self.fixed_starts = np.array(fixed_starts)
 			# save the sampled fixed starts
 			np.save(os.path.join(log_path, 'test_starts.npy'), self.fixed_starts, allow_pickle=False)
+		elif (type(fixed_starts)==str) and (os.path.isfile(fixed_starts)):
+			assert fixed_starts.endswith('.npy'), 'If supplying a file to load starts from, it must be .npy'
+			self.fixed_starts = np.load(fixed_starts, allow_pickle=False, mmap_mode=None)
 		else:
 			self.fixed_starts = np.array([None for ii in range(n_eval_episodes)])
 
