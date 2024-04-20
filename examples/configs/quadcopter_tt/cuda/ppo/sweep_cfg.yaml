@@ -5,24 +5,24 @@ criteria:
 environment:
   num_envs:
     type: 'int'
-    low: 300
-    high: 900
+    low: 500
+    high: 1000
     log: True
   
-  dt:
+  reference_trajectory_horizon:
     type: 'categorical'
-    choices: [0.005, 0.004]
+    choices: [0.125, 0.5]
 
 algorithm:
   n_steps:
     type: 'int'
-    low: 10
-    high: 100
+    low: 50
+    high: 250
     log: True
-
+  
   batch_size:
     type: 'categorical'
-    choices: [0.1, 0.2]
+    choices: [0.25, 0.5]
 
   n_epochs:
     type: 'categorical'
@@ -40,12 +40,8 @@ algorithm:
     high: 0.01
     log: True
 
-  clip_range:
-    type: 'categorical'
-    choices: [0.05, 0.1]
-
 policy:
   log_std_init:
     type: 'float'
-    low: -3
+    low: -3.
     high: 0.

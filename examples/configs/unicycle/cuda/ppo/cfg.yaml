@@ -4,29 +4,30 @@ environment:
   num_envs: 1
   normalized_rewards: False
   environment_kwargs:
-    dt: 0.004
-    T: 3.
+    dt: 0.005
+    T: 4.
     nonlinear_cost: False
     normalized_actions: True
     normalized_observations: True
-    alpha_cost: 0.79
-    alpha_action_cost: 0.79
-    alpha_terminal_cost: 0.1
+    alpha_cost: 31.351
+    alpha_action_cost: 31.351
+    alpha_terminal_cost: 0.08501
 
 algorithm:
   name: 'PPO'
-  total_timesteps: 25000000
-  save_every_timestep: 20000000
+  total_timesteps: 30000000
+  save_every_timestep: 30000000
   algorithm_kwargs:
-    gamma: 0.9995
+    gamma: 0.9999
     gae_lambda: 0.99
     ent_coef: 0.
     vf_coef: 0.5
     normalize_advantage: False
-    max_grad_norm: 0.5
+    max_grad_norm: 0.9216909281395821
     learning_rate: 0.0004
     learning_rate_schedule: 
-      type: 'lin'
+      type: 'kla'
+      target_kl: null
     n_steps: 320
     n_epochs: 5
     batch_size: 0.25

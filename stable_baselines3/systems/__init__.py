@@ -2,11 +2,13 @@ from gymnasium.envs.registration import register
 
 register(id='Unicycle-v0', entry_point='stable_baselines3.systems.unicycle:Unicycle')
 # register(id='UnicycleSkipStep-v0', entry_point='stable_baselines3.systems.unicycle_skipstep:UnicycleSkipStep')
+register(id='UnicycleTT-v0', entry_point='stable_baselines3.systems.unicycle_tt:UnicycleTT')
+register(id='UnicycleDecomposition-v0', entry_point='stable_baselines3.systems.unicycle_decomposition:UnicycleDecomposition')
 
 register(id='Quadcopter-v0', entry_point='stable_baselines3.systems.quadcopter:Quadcopter')
 register(id='QuadcopterSkipStep-v0', entry_point='stable_baselines3.systems.quadcopter_skipstep:QuadcopterSkipStep')
 register(id='QuadcopterTT-v0', entry_point='stable_baselines3.systems.quadcopter_tt:QuadcopterTT')
-# register(id='QuadcopterStateOutput-v0', entry_point='stable_baselines3.systems.quadcopter_stateoutput:QuadcopterStateOutput')
+register(id='QuadcopterDecomposition-v0', entry_point='stable_baselines3.systems.quadcopter_decomposition:QuadcopterDecomposition')
 
 register(id='CartPoleCustom-v0', entry_point='stable_baselines3.systems.cartpole:CartPole')
 

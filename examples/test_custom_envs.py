@@ -185,10 +185,9 @@ def main():
 		record = load_dir
 	files = [os.path.join(load_dir, f) for f in os.listdir(load_dir) if os.path.isfile(os.path.join(load_dir, f))]
 
-	zip_files = []
+	zip_files = [ff for ff in files if (os.path.splitext(ff)[-1] == '.zip')]
 	curr_save_id = 0
-	# find the cfg file
-	for ff in files:
+	for ff in zip_files:
 		ff_basename = os.path.basename(ff)
 		ff_name, ff_ext = os.path.splitext(ff_basename)
 		if (ff_ext == '.zip'):
@@ -205,8 +204,16 @@ def main():
 			except ValueError:
 				pass
 
-		elif (ff_ext == '.yaml'):
-			cfg = YAML().load(open(ff, 'r'))
+	cfg_files = [ff for ff in files if (os.path.splitext(ff)[-1] == '.yaml')]
+	if (len(cfg_files) > 1):
+		cfg_file = [os.path.splitext(os.path.basename(ff))[0].split('_')[-1]=='final' for ff in cfg_files]
+		if (np.any(cfg_file)):
+			cfg_file = cfg_files[np.nonzero(cfg_file)[0][0]]
+		else:
+			assert False, 'Too many cfg files, cannot determine which to load'
+	else:
+		cfg_file = cfg_files[0]
+	cfg = YAML().load(open(cfg_file, 'r'))
 	
 	eval_envname = cfg['environment'].get('eval_envname', cfg['environment']['name'])
 	test_env = gym.make(eval_envname, **cfg['environment']['environment_kwargs'])

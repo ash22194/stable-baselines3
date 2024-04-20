@@ -1,0 +1,64 @@
+environment:
+  name: QuadcopterDecomposition-v0
+  num_envs: 3
+  normalized_rewards: false
+  environment_kwargs:
+    param:
+      dt: 0.004
+    normalized_actions: true
+    normalized_observations: true
+    alpha_cost: 1.223633355917235
+    alpha_terminal_cost: 1.9898048601277891
+
+algorithm:
+  name: PPO
+  total_timesteps: 15000000
+  save_every_timestep: 50000
+  min_evals: 0
+  max_no_improvement_evals: 5
+  n_eval_episodes: 100
+  algorithm_kwargs:
+    gamma: 0.9984539792726858
+    gae_lambda: 0.99
+    ent_coef: 0.
+    vf_coef: 0.5
+    normalize_advantage: False
+    max_grad_norm: 0.9216909281395821
+    learning_rate: 0.00036558379071618247
+    learning_rate_schedule:
+      type: lin
+    n_steps: 281
+    n_epochs: 7
+    batch_size: 843
+    clip_range: 0.2
+
+decomposition:
+  independent_states: [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  in_tree:
+    - [2, 1]
+    - [2, 1]
+    - [-1, 1]
+    - [-1, 2]
+  in_st_map:
+    - [0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1]
+    - [0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1]
+    - [0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1]
+    - [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1]
+
+policy:
+  save_prefix: model
+  type: 'DecompositionMlpPolicy'
+  policy_kwargs:
+    net_arch:
+      pi:
+        - - [0, 1]
+          - [128,128,128]
+        - - [2]
+          - [64,64,64]
+        - - [3]
+          - [64,64,64]
+      vf: [256, 256, 256]
+    activation_fn: relu
+    optimizer_class: rmsprop
+    log_std_init: -2.067521056483639
+    ortho_init: true

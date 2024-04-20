@@ -18,8 +18,8 @@ environment:
 
 algorithm:
   name: PPO
-  total_timesteps: 60000000
-  save_every_timestep: 60000000
+  total_timesteps: 120000000
+  save_every_timestep: 30000000
   algorithm_kwargs:
     gamma: 0.9984539792726858
     gae_lambda: 0.99
@@ -30,10 +30,10 @@ algorithm:
     learning_rate: 1.5283609473524498e-05
     learning_rate_schedule:
       type: kla
-      target_kl: 0.0025
+      target_kl: null
     n_steps: 116
     n_epochs: 5
-    batch_size: 18734
+    batch_size: 0.5
     clip_range: 0.1
 
 policy:

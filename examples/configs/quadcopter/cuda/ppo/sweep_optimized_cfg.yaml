@@ -24,7 +24,7 @@ algorithm:
     learning_rate: 1.5283609473524498e-05
     learning_rate_schedule:
       type: kla
-      target_kl: 0.0025
+      target_kl: null
     n_steps: 116
     n_epochs: 5
     batch_size: 18734

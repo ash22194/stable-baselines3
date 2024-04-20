@@ -1,44 +1,15 @@
+import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-import torch as th
 import meshcat
+
 import scipy.spatial.transform as transfm
 
-
-def th_get_rotation(ry, rx, rz, device=None, dtype=None):
-	# Function to construct batch of rotation matrices from pitch, roll and yaw angles
-	batch_size = ry.shape[0]
-	assert batch_size==rx.shape[0] and batch_size==rz.shape[0], "rx, ry and rz must be of the same size"
-
-	Rz = th.zeros((batch_size, 3,3), device=device, dtype=dtype)
-	Rz[:,2,2] = 1.
-	Rz[:,0,0] = th.cos(rz)
-	Rz[:,0,1] = -th.sin(rz)
-	Rz[:,1,0] = -Rz[:,0,1]
-	Rz[:,1,1] = Rz[:,0,0]
-
-	Rx = th.zeros((batch_size, 3,3), device=device, dtype=dtype)
-	Rx[:,0,0] = 1.
-	Rx[:,1,1] = th.cos(rx)
-	Rx[:,1,2] = -th.sin(rx)
-	Rx[:,2,1] = -Rx[:,1,2]
-	Rx[:,2,2] = Rx[:,1,1]
-
-	Ry = th.zeros((batch_size, 3,3), device=device, dtype=dtype)
-	Ry[:,1,1] = 1.
-	Ry[:,0,0] = th.cos(ry)
-	Ry[:,0,2] = th.sin(ry)
-	Ry[:,2,0] = -Ry[:,0,2]
-	Ry[:,2,2] = Ry[:,0,0]
-
-	return th.bmm(Rz, th.bmm(Rx, Ry))
-
-
-class GPUUnicycle:
+class UnicycleDecomposition(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, device='cpu', num_envs=1, param=dict(), dt=1e-3, T=2., normalized_actions=True, normalized_observations=True, nonlinear_cost=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
+	def __init__(self, param=dict(), normalized_actions=True, normalized_observations=False, nonlinear_cost=True, intermittent_starts=False, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Unicycle, self).__init__()
 		# Define model paramters
 		mw = 0.5
@@ -60,26 +31,35 @@ class GPUUnicycle:
 			'Id': np.diag([md*(upper_body_length**2 + 0.08**2)/12, md*(upper_body_length**2 + 0.08**2)/12, 2*md*(0.08**2)/12]),\
 			'alpha': -np.pi/2, 'g': 9.81, 'fcoeff': 0.05, 'T': 2, 'dt':1e-3, 'gamma_':0.9995, 'X_DIMS': 16, 'U_DIMS': 2,\
 			'goal': goal, 'u0': np.zeros((2,1)),\
-			'Q': np.diag([0.25, 1, 0.25, 0.025, 0.0001, 0.001, 0.0005, 0.0001]), 'R': (np.eye(2) / 5000.), 'QT': 2*np.diag([1.,1.,1.,1.,1.,1.,1.,1.]),\
-			# 'Q': np.diag([0.1,0.1, 0.0005,0.0005, 0.,0., 0.00025, 0.001]), 'R': (np.eye(2) / 5000.), 'QT': 10*np.eye(8), \
-			# 'Q': np.diag([1.,1., 0.001,0.001, 0.01,0.0001, 0.0025, 0.0005]), 'R': (np.eye(2) / 5000.), 'QT': 2*np.eye(8), \
+			'Q_quadratic': np.diag([0.25, 1, 0.25, 0.025, 0.0001, 0.001, 0.0005, 0.0001]), 'R_quadratic': (np.eye(2) / 5000.), 'QT_quadratic': 2*np.diag([1.,1.,1.,1.,1.,1.,1.,1.]),\
+			# 'Q_quadratic': np.diag([0.25, 0.25, 0.25, 0.025, 0.0001, 0.0001, 0.00002, 0.00025]), 'R_quadratic': (np.eye(2) / 5000.), 'QT_quadratic': 2*np.diag([1.,1.,1.,1.,1.,1.,1.,1.]),\
+			# 'Q_nonlinear': np.diag([1.,1., 0.001,0.001, 0.01,0.0001, 0.0025, 0.0005]), 'R_nonlinear': (np.eye(2) / 5000.), 'QT_nonlinear': 2*np.eye(8), \
+			'Q_nonlinear': np.diag([1,0.25, 0.001,0.00025, 0.025,0.000025, 0.005, 0.0005]), 'R_nonlinear': (np.eye(2) / 5000.), 'QT_nonlinear': 2*np.eye(8), \
+			'X_DIMS_FREE': np.array([3,4,5,6,7,11,12,13,14,15]), 'X_DIMS_FIXED': np.array([]),\
+			'U_DIMS_FREE': np.arange(2), 'U_DIMS_FIXED': np.array([]), 'U_DIMS_CONTROLLED': np.array([]),\
 			'x_sample_limits': np.array([[-np.pi, np.pi], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-np.pi, np.pi], [-np.pi/3, np.pi/3], [-1., 1.], [-1., 1.], [-1., 1.], [5., 15.], [-1., 1.]]),\
-			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/3, np.pi/3], [-np.pi/3, np.pi/3], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [-5., 25.], [-8., 8.]]),\
+			'x_bounds': np.array([[-20., 20.], [-20., 20.], [0., 2.], [-2*np.pi, 2*np.pi], [-np.pi/2.5, np.pi/2.5], [-np.pi/2.5, np.pi/2.5], [-10*np.pi, 10*np.pi], [-4*np.pi/3, 4*np.pi/3], [-8, 8], [-8, 8], [-8, 8], [-8., 8.], [-8., 8.], [-8., 8.], [-5., 25.], [-8., 8.]]),\
 			'u_limits': np.array([[-15., 15.], [-15., 15.]])}
 		param_.update(param)
-		param_.update({'dt':dt, 'T':T})
 		param_['lambda_'] = (1. - param_['gamma_']) / param_['dt']
 		param.update(param_)
-		self.device = device
-		self.np_dtype = np.float32
-		self.th_dtype = th.float32
-		self.num_envs = num_envs
 
 		self.X_DIMS = param['X_DIMS'] # dimension of observations
-		self.independent_dims = np.array([3,4,5,6,7,11,12,13,14,15]) # the same length as x_sample_limits
-		self.observation_dims = np.array([3,4,5,7,11,12,13,14,15])
+		self.X_DIMS_FREE = param['X_DIMS_FREE']
+		self.X_DIMS_FIXED = param['X_DIMS_FIXED']
+		self.independent_dims = np.array([3,4,5,6,7,11,12,13,14,15])
+		# check that X_DIMS_FIXED and X_DIMS_FREE are subsets of independent_dims
+		assert np.all(np.any(self.X_DIMS_FREE[:,np.newaxis]==np.concatenate((self.independent_dims, np.array([self.X_DIMS]))), axis=1)), 'free dims must be a subset of the independent dims'
+		assert np.all(np.any(self.X_DIMS_FIXED[:,np.newaxis]==np.concatenate((self.independent_dims, np.array([self.X_DIMS]))), axis=1)), 'fixed dims must be a subset of the independent dims'
+		self.observation_dims = np.arange(self.X_DIMS)
 		self.cost_dims = np.array([4,5,7,11,12,13,14,15])
+		self.cost_dims_free = self.cost_dims[np.any(self.cost_dims[:,np.newaxis]==self.X_DIMS_FREE, axis=1)]
+
 		self.U_DIMS = param['U_DIMS']
+		self.U_DIMS_FREE = param['U_DIMS_FREE']
+		self.U_DIMS_FIXED = param['U_DIMS_FIXED']
+		self.U_DIMS_CONTROLLED = param['U_DIMS_CONTROLLED']
+
 		self.goal = param['goal']
 		self.u0 = param['u0']
 		self.T = param['T']
@@ -88,9 +68,15 @@ class GPUUnicycle:
 		self.x_sample_limits = param['x_sample_limits'] # reset within these limits
 		self.x_bounds = param['x_bounds']
 		self.u_limits = param['u_limits']
-		self.Q = param['Q']
-		self.QT = param['QT']
-		self.R = param['R']
+		self.nonlinear_cost = nonlinear_cost
+		if (nonlinear_cost):
+			self.Q = param['Q_nonlinear']
+			self.QT = param['QT_nonlinear']
+			self.R = param['R_nonlinear']
+		else:
+			self.Q = param['Q_quadratic']
+			self.QT = param['QT_quadratic']
+			self.R = param['R_quadratic']
 		self.gamma_ = param['gamma_']
 		self.lambda_ = param['lambda_']
 
@@ -103,13 +89,17 @@ class GPUUnicycle:
 		self.Id = param['Id']
 		self.If = param['If']
 		self.Iw = param['Iw']
+
 		self.g = param['g']
 		self.alpha = param['alpha']
 		self.fcoeff = param['fcoeff']
 		self.baumgarte_factor = 10
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
-		self.nonlinear_cost = nonlinear_cost
+		if (intermittent_starts):
+			self.step_count_high = self.horizon
+		else:
+			self.step_count_high = 1
 		self.alpha_cost = alpha_cost
 		# self.alpha_action_cost = alpha_action_cost
 		self.alpha_action_cost = alpha_cost
@@ -120,213 +110,184 @@ class GPUUnicycle:
 		# They must be gym.spaces objects
 		# Example when using continuous actions:
 		if (normalized_actions):
-			self.action_space = spaces.Box(low=-1, high=1, shape=(self.U_DIMS,), dtype=self.np_dtype)
+			self.action_space = spaces.Box(low=-1, high=1, shape=(self.U_DIMS,), dtype=np.float32)
 		else:
-			self.action_space = spaces.Box(low=self.u_limits[:,0], high=self.u_limits[:,1], dtype=self.np_dtype)
+			self.action_space = spaces.Box(low=self.u_limits[:,0], high=self.u_limits[:,1], dtype=np.float32)
 
 		state_obs_bounds_mid = 0.5*(self.x_bounds[self.observation_dims,1] + self.x_bounds[self.observation_dims,0])
 		state_obs_bounds_range = 0.5*(self.x_bounds[self.observation_dims,1] - self.x_bounds[self.observation_dims,0])
 		time_obs_bounds_mid = 0.5*self.horizon
 		time_obs_bounds_range = 0.5*self.horizon
-		obs_bounds_mid = np.concatenate((state_obs_bounds_mid, np.array([time_obs_bounds_mid])))
-		obs_bounds_range = np.concatenate((state_obs_bounds_range, np.array([time_obs_bounds_range])))			
+		self.obs_bounds_mid = np.concatenate((state_obs_bounds_mid, np.array([time_obs_bounds_mid])))
+		self.obs_bounds_range = np.concatenate((state_obs_bounds_range, np.array([time_obs_bounds_range])))			
 		
 		if (normalized_observations):
-			self.observation_space = spaces.Box(low=-1, high=1, shape=(self.observation_dims.shape[0]+1,), dtype=self.np_dtype)
-			target_obs_mid = np.zeros(self.observation_dims.shape[0]+1)
-			target_obs_range = np.ones(self.observation_dims.shape[0]+1)
+			self.observation_space = spaces.Box(low=-1, high=1, shape=(self.observation_dims.shape[0]+1,), dtype=np.float32)
+			self.target_obs_mid = np.zeros(self.observation_dims.shape[0]+1)
+			self.target_obs_range = np.ones(self.observation_dims.shape[0]+1)
 		else:
 			self.observation_space = spaces.Box(
 				low=np.concatenate((self.x_bounds[self.observation_dims,0], np.array([0.]))), 
 				high=np.concatenate((self.x_bounds[self.observation_dims,1], np.array([self.horizon]))), 
-				dtype=self.np_dtype
+				dtype=np.float32
 			)
-			target_obs_mid = obs_bounds_mid
-			target_obs_range = obs_bounds_range
-		
-		# Create tensor copies of relevant numpy arrays
-		self.th_x_bounds = th.asarray(param['x_bounds'], device=device, dtype=self.th_dtype)
-		self.th_u_limits = th.asarray(param['u_limits'], device=device, dtype=self.th_dtype)
-		self.th_Q = th.asarray(param['Q'], device=device, dtype=self.th_dtype)
-		self.th_QT = th.asarray(param['QT'], device=device, dtype=self.th_dtype)
-		self.th_goal = th.asarray(param['goal'][:,0], device=device, dtype=self.th_dtype)
-		self.th_R = th.asarray(param['R'], device=device, dtype=self.th_dtype)
-		self.th_u0 = th.asarray(param['u0'][:,0], device=device, dtype=self.th_dtype)
-
-		self.th_x_sample_limits_mid = th.asarray(0.5*(param['x_sample_limits'][:,0] + param['x_sample_limits'][:,1]), device=device, dtype=self.th_dtype)
-		self.th_x_sample_limits_range = th.asarray((param['x_sample_limits'][:,1] - param['x_sample_limits'][:,0]), device=device, dtype=self.th_dtype)
-		self.th_obs_bounds_mid = th.asarray(obs_bounds_mid, device=device, dtype=self.th_dtype)
-		self.th_obs_bounds_range = th.asarray(obs_bounds_range, device=device, dtype=self.th_dtype)
-		self.th_target_obs_mid = th.asarray(target_obs_mid, device=device, dtype=self.th_dtype)
-		self.th_target_obs_range = th.asarray(target_obs_range, device=device, dtype=self.th_dtype)
-
-		# initialize torch tensors
-		self.set_num_envs(num_envs)
-
-	def set_num_envs(self, num_envs):
-		self.num_envs = num_envs
-		self.state = th.zeros((self.num_envs, self.X_DIMS), device=self.device, dtype=self.th_dtype)
-		self.step_count = th.zeros((self.num_envs, ), device=self.device, dtype=self.th_dtype)
-		self.obs = th.zeros((self.num_envs, self.observation_dims.shape[0]+1), device=self.device, dtype=self.th_dtype)
-		self.cumm_reward = th.zeros((self.num_envs, ), device=self.device, dtype=self.th_dtype)
+			self.target_obs_mid = self.obs_bounds_mid
+			self.target_obs_range = self.obs_bounds_range
 
 	def step(self, action):
 		# If scaling actions use this
 		if (self.normalized_actions):
-			action = 0.5*((self.th_u_limits[:,0] + self.th_u_limits[:,1]) + action*(self.th_u_limits[:,1] - self.th_u_limits[:,0]))
+			action = 0.5*((self.u_limits[:,0] + self.u_limits[:,1]) + action*(self.u_limits[:,1] - self.u_limits[:,0]))
+		action[self.U_DIMS_FIXED] = self.u0[self.U_DIMS_FIXED,0] #TODO should it be 0 instead?
 
-		state_ = self.dyn_rk4(self.state, action, self.dt)
-		state_ = self._enforce_bounds(state_)
+		# e_p, e_v = self._err_posvel_contact(self.state)
+		# e_a = self._err_acc_contact(self.state, action)
+		# info = dict(contact_info={'err_p': e_p, 'err_v': e_v, 'err_a': e_a})
+		info = dict()
+
+		state_ = self.dyn_rk4(self.state[:,np.newaxis], action[:,np.newaxis], self.dt)
+		state_ = self._enforce_bounds(state_[:,0])
 
 		cost, reached_goal = self._get_cost(action, state_)
+		reward = -cost
 
 		self.state = state_
-		self.step_count += 1.
-		self._set_obs()
-		done = th.logical_or(self.step_count >= self.horizon, reached_goal)
-		terminal_cost = self._get_terminal_cost(done=done)
-		cost += terminal_cost
-		reward = -cost
-		self.cumm_reward += reward
+		self.step_count += 1
 
-		if (th.any(done)):
-			info = {
-				"ep_reward": th.nanmean(self.cumm_reward[done]).cpu().numpy(),
-				"ep_length": th.nanmean(self.step_count[done]).cpu().numpy(),
-				"ep_terminal_goal_dist": th.nanmean(self.get_goal_dist()[done]).cpu().numpy(),
-				"ep_terminal_cost": th.nanmean(terminal_cost[done]).cpu().numpy()
-			}
+		if ((self.step_count >= self.horizon) or reached_goal):
+			done = True
+			terminal_cost = self._get_terminal_cost() # terminal cost
+			reward -= terminal_cost
+			info.update({
+				'ep_terminal_goal_dist': self.get_goal_dist(),
+				'ep_terminal_cost': terminal_cost,
+				'step_count' : self.step_count
+			})
 		else:
-			info = {}
+			done = False
+			info.update({'step_count' : self.step_count})
 
 		return self.get_obs(), reward, done, False, info
 
-	def reset(self, done=None, seed=None, options=None, state=None):
-		if (state is not None):
-			assert (len(state.shape)==2 and state.shape[0]==self.num_envs and state.shape[1]==self.X_DIMS), 'Invalid input state'
-			self.state[:,self.independent_dims] = state[:,self.independent_dims]
-			self._enforce_bounds(self.state)
-			self.step_count[:] = 0.
-			self.cumm_reward[:] = 0.
-		
+	def reset(self, seed=None, options=None, state=None):
+		super().reset(seed=seed)
+		self.step_count = int(np.random.randint(low=0, high=self.step_count_high))
+		if (state is None):
+			# sample = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+			sample = (self.horizon - self.step_count) / self.horizon * (np.random.rand(self.independent_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+			sample += (0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]))
 		else:
-			if (done is not None):
-				assert done.shape[0]==self.num_envs and type(done)==th.Tensor and done.dtype==th.bool, "done tensor of shape %d and type %s"%(done.shape[0], type(done))
-			else:
-				done = th.ones(self.num_envs, device=self.device, dtype=bool)
-			num_done = th.sum(done)
-			if (num_done > 0):
-				step_count_new = 0*th.randint(low=0, high=self.horizon, size=(num_done,1), dtype=self.th_dtype, device=self.device)
-				state_new = th.zeros((num_done, self.X_DIMS), device=self.device, dtype=self.th_dtype)
-				state_new[:,self.independent_dims] = ((th.rand((num_done, self.independent_dims.shape[0]), device=self.device, dtype=self.th_dtype) - 0.5) * (self.th_x_sample_limits_range))
-				state_new = (((self.horizon - step_count_new) / self.horizon) * state_new)
-				state_new[:,self.independent_dims] += self.th_x_sample_limits_mid
-				state_new = self._enforce_bounds(state_new)
+			assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
+			# construct the dependent states from the independent
+			sample = state[self.independent_dims]
 
-				self.step_count[done] = step_count_new[:,0]
-				self.state[done,:] = state_new
-				self.cumm_reward[done] = 0.
-		
-		self._set_obs()
-		info = {}
-		
+		self.state = np.zeros(self.X_DIMS)
+		self.state[self.independent_dims] = sample
+		self.state[self.X_DIMS_FIXED] = self.goal[self.X_DIMS_FIXED,0]
+		self.state = self._enforce_bounds(self.state)
+
+		self.step_count = 0
+		info = dict(contact_info={'err_p':np.zeros(3), 'err_v':np.zeros(3), 'err_a':np.zeros(3)})
+		info.update({'terminal_state': np.array([]), 'step_count' : self.step_count})
+
 		return self.get_obs(), info
 
 	def get_obs(self, normalized=None):
-		obs = self.obs
+		obs = np.zeros(self.observation_dims.shape[0]+1)
+		obs[:self.observation_dims.shape[0]] = self.state[self.observation_dims]
+		obs[-1] = self.step_count
 		if ((normalized == None) and self.normalized_observations) or (normalized == True):
-			obs = (obs - self.th_obs_bounds_mid) / self.th_obs_bounds_range
-			obs = self.th_target_obs_range*obs + self.th_target_obs_mid
-		return obs
-
+			obs = (obs - self.obs_bounds_mid) / self.obs_bounds_range
+			obs = self.target_obs_range*obs + self.target_obs_mid
+		return np.float32(obs)
+	
 	def get_goal_dist(self):
-		return th.linalg.norm((self.state - self.th_goal)[:,self.cost_dims], dim=1, keepdim=False)
-
-	def _set_obs(self):
-		self.obs[:,:self.observation_dims.shape[0]] = self.state[:,self.observation_dims]
-		self.obs[:,-1] = self.step_count
+		return np.linalg.norm((self.state - self.goal[:,0])[self.cost_dims_free])
 	
 	def _get_cost(self, action, state_):
 		if (self.nonlinear_cost):
 			y = self.get_taskspace_obs()
 		else:
-			y = (self.state - self.th_goal)[:,self.cost_dims]
+			y = (self.state - self.goal[:,0])[self.cost_dims]
 
-		action = th.asarray(action, dtype=self.th_dtype)
-		cost = th.sum((y @ self.th_Q) * y, dim=1, keepdim=False) * self.alpha_cost 
-		cost = cost + th.sum(((action - self.th_u0) @ self.th_R) * (action - self.th_u0), dim=1, keepdim=False) * self.alpha_action_cost
+		y = y[:,np.newaxis]
+		a = action[:,np.newaxis]
+
+		cost = np.sum(y * (self.Q @ y)) * self.alpha_cost + np.sum((a - self.u0) * (self.R @ (a - self.u0))) * self.alpha_action_cost
 		cost = cost * self.dt
 
-		reached_goal = th.linalg.norm((state_ - self.th_goal)[:,self.cost_dims], dim=1, keepdim=False) <= 1e-2
+		reached_goal = np.linalg.norm((state_ - self.goal[:,0])[self.cost_dims]) <= 1e-2	
 
 		return cost, reached_goal
 	
-	def _get_terminal_cost(self, done=None):
-		if (done is not None):
-			assert done.shape[0]==self.num_envs and type(done)==th.Tensor and done.dtype==th.bool, "done tensor of shape %d and type %s"%(done.shape[0], type(done))
-		else:
-			done = th.ones(self.num_envs, device=self.device, dtype=bool)
-		
+	def _get_terminal_cost(self):
 		if (self.nonlinear_cost):
 			y = self.get_taskspace_obs()
 		else:
-			y = (self.state - self.th_goal)[:,self.cost_dims]
-		cost = th.sum((y @ self.th_QT) * y, dim=1, keepdim=False) * self.alpha_terminal_cost
-		cost = cost * done
-		
+			y = (self.state - self.goal[:,0])[self.cost_dims]
+
+		y = y[:,np.newaxis]
+		cost = np.sum(y * (self.QT @ y)) * self.alpha_terminal_cost
+
 		return cost
 	
 	def get_taskspace_obs(self):
-		Rframe = th_get_rotation(self.state[:,5], self.state[:,4], self.state[:,3], device=self.device, dtype=self.th_dtype)
+		x = self.state
 
-		p_wheel = Rframe @ th.asarray([0.,0.,-self.rf], device=self.device, dtype=self.th_dtype)
-		p_dumbell = Rframe @ th.asarray([0.,0.,self.rd], device=self.device, dtype=self.th_dtype)
+		# calculate com position and velocity
+		Rframe = transfm.Rotation.from_euler('yxz', [x[5], x[4], x[3]]).as_matrix()
+		p_wheel = Rframe @ np.array([0.,0.,-self.rf])
+		p_dumbell = Rframe @ np.array([0.,0.,self.rd])
 
 		p_com = (self.mw*p_wheel + self.md*p_dumbell) / (self.mf + self.mw + self.md)
-		v_com = th.squeeze(th.bmm(self._jacobian_com(self.state), th.unsqueeze(self.state[:,8:16], dim=2)), dim=2)
+		v_com = self._jacobian_com(x) @ x[8:16]
 
-		# ry_wheel = self.state[:,5]+self.state[:,6]
-		# p_wheel_rel = th.zeros((self.num_envs, 3, 1), device=self.device, dtype=self.th_dtype)
-		# p_wheel_rel[:,0,0] = self.rw*th.sin(ry_wheel)
-		# p_wheel_rel[:,2,0] = -self.rw*th.cos(ry_wheel)
-		# Rwheel = th_get_rotation(ry_wheel, self.state[:,4], self.state[:,3], device=self.device, dtype=self.th_dtype)
-		# p_con = p_wheel + th.squeeze(th.bmm(Rwheel, p_wheel_rel))
+		Rwheel = transfm.Rotation.from_euler('yxz', [x[5]+x[6], x[4], x[3]]).as_matrix()
+		p_con = p_wheel + Rwheel @ np.array([self.rw*np.sin(x[5]+x[6]), 0., -self.rw*np.cos(x[5]+x[6])])
+		v_con = self._jacobian_contact_trace(x) @ x[8:16]
 
-		ry_wheel = th.zeros(self.num_envs, device=self.device, dtype=self.th_dtype)
-		p_wheel_rel = th.asarray([0., 0., -self.rw], device=self.device, dtype=self.th_dtype)
-		Rwheel = th_get_rotation(ry_wheel, self.state[:,4], self.state[:,3], device=self.device, dtype=self.th_dtype)
-		p_con = p_wheel + Rwheel @ p_wheel_rel
-
-		v_con = th.squeeze(th.bmm(self._jacobian_contact_trace(self.state), th.unsqueeze(self.state[:,8:16], dim=2)), dim=2)
-
-		y = th.zeros((self.num_envs, 8), device=self.device, dtype=self.th_dtype)
-		y[:,0] = p_com[:,0] - p_con[:,0]
-		y[:,1] = p_com[:,1] - p_con[:,1]
-		y[:,2] = v_com[:,0] - v_con[:,0]
-		y[:,3] = v_com[:,1] - v_con[:,1]
-		y[:,4] = self.state[:,7] - self.th_goal[7]
-		y[:,5] = self.state[:,15] - self.th_goal[15]
-		y[:,6] = self.state[:,11] - self.th_goal[11]
-		y[:,7] = self.state[:,14] - self.th_goal[14]
+		Ryaw = transfm.Rotation.from_euler('yxz', [0., 0., -x[3]]).as_matrix()
+		delta_com = Ryaw @ (p_com - p_con)
+		vdelta_com = Ryaw @ (v_com - v_con)
+		y = np.zeros(8)
+		y[:2] = delta_com[:2]
+		y[2:4] = vdelta_com[:2]
+		y[4] = x[7] - self.goal[7,0]
+		y[5] = x[15] - self.goal[15,0]
+		y[6] = x[11] - self.goal[11,0]
+		y[7] = x[14] - self.goal[14,0]
 
 		return y
-	
+
+	def _enforce_bounds(self, state_):
+		# bound the independent dims and compute the dependent dims accordingly!
+		state_[self.independent_dims] = np.maximum(self.x_bounds[self.independent_dims,0], np.minimum(self.x_bounds[self.independent_dims,1], state_[self.independent_dims]))
+		err_p, err_v = self._err_posvel_contact(state_)
+		state_[:3] += (-err_p)
+		state_[8:11] += (-err_v)
+
+		return state_
+
 	def dyn_rk4(self, x, u, dt):
 		k1 = self.dyn_full(x, u)
+		k1[self.X_DIMS_FIXED] = 0.
 		q = x + 0.5*k1*dt
 
 		k2 = self.dyn_full(q, u)
+		k2[self.X_DIMS_FIXED] = 0.
 		q = x + 0.5*k2*dt
 
 		k3 = self.dyn_full(q, u)
+		k3[self.X_DIMS_FIXED] = 0.
 		q = x + k3*dt
 
 		k4 = self.dyn_full(q, u)
-		
+		k4[self.X_DIMS_FIXED] = 0.
+
 		q = x + dt * (k1 + 2*k2 + 2*k3 + k4) / 6.0
 
 		return q
-	
+
 	def dyn_full(self, x, u):
 
 		md = self.md
@@ -349,34 +310,34 @@ class GPUUnicycle:
 		alpha = self.alpha
 		fcoeff = self.fcoeff
 
-		ph = x[:,3]
-		theta = x[:,4]
-		om = x[:,5]
-		ps = x[:,6] + om
-		ne = x[:,7]
+		ph = x[3,0]
+		th = x[4,0]
+		om = x[5,0]
+		ps = x[6,0] + om
+		ne = x[7,0]
 
-		vx = x[:,8]
-		vy = x[:,9]
-		vz = x[:,10]
-		v_ph = x[:,11]
-		v_th = x[:,12]
-		v_om = x[:,13]
-		v_ps = x[:,14] + v_om
-		v_ne = x[:,15]
+		vx = x[8,0]
+		vy = x[9,0]
+		vz = x[10,0]
+		v_ph = x[11,0]
+		v_th = x[12,0]
+		v_om = x[13,0]
+		v_ps = x[14,0] + v_om
+		v_ne = x[15,0]
 
-		Tomega = -u[:,0]
-		Tneta = u[:,1]
+		Tomega = -u[0,0]
+		Tneta = u[1,0]
 
-		t2 = th.cos(ne)
-		t3 = th.cos(om)
-		t4 = th.cos(theta)
-		t5 = th.sin(ne)
-		t6 = th.cos(ps)
-		t7 = th.cos(ph)
-		t8 = th.sin(om)
-		t9 = th.sin(theta)
-		t10 = th.sin(ps)
-		t11 = th.sin(ph)
+		t2 = np.cos(ne)
+		t3 = np.cos(om)
+		t4 = np.cos(th)
+		t5 = np.sin(ne)
+		t6 = np.cos(ps)
+		t7 = np.cos(ph)
+		t8 = np.sin(om)
+		t9 = np.sin(th)
+		t10 = np.sin(ps)
+		t11 = np.sin(ph)
 		t12 = alpha+om
 		t13 = md+mf
 		t14 = md*rd
@@ -399,7 +360,7 @@ class GPUUnicycle:
 
 		t32 = ne*2.0
 		t33 = om*2.0
-		t34 = theta*2.0
+		t34 = th*2.0
 		t35 = v_om**2
 		t36 = v_th**2
 		t37 = v_ph**2
@@ -408,26 +369,26 @@ class GPUUnicycle:
 		t63 = -Idyy
 		t64 = -Idzz
 		t70 = -Iwzz
-		t39 = th.cos(t32)
+		t39 = np.cos(t32)
 		t40 = t2**2
-		t41 = th.cos(t33)
-		t42 = th.cos(t34)
+		t41 = np.cos(t33)
+		t42 = np.cos(t34)
 		t43 = t4**2
-		t44 = th.sin(t32)
+		t44 = np.sin(t32)
 		t45 = t5**2
-		t46 = th.cos(t38)
+		t46 = np.cos(t38)
 		t47 = t6**2
 		t48 = t14*2.0
 		t49 = t14*4.0
 		t50 = t16*2.0
 		t51 = t16*4.0
-		t52 = th.sin(t33)
+		t52 = np.sin(t33)
 		t53 = t8**2
-		t54 = th.sin(t34)
+		t54 = np.sin(t34)
 		t55 = t9**2
-		t56 = th.sin(t38)
-		t58 = th.cos(t12)
-		t59 = th.sin(t12)
+		t56 = np.sin(t38)
+		t58 = np.cos(t12)
+		t59 = np.sin(t12)
 		t60 = rf*t3
 		t61 = mw+t13
 		t62 = -t18
@@ -462,8 +423,8 @@ class GPUUnicycle:
 		t93 = t17*t48
 		t94 = Idyy+Idzz+t62
 		t96 = Idxx*t4*t59
-		t97 = th.cos(t95)
-		t98 = th.sin(t95)
+		t97 = np.cos(t95)
+		t98 = np.sin(t95)
 		t99 = t19+t65
 		t100 = t20+t66
 		t101 = t27+t71
@@ -507,95 +468,95 @@ class GPUUnicycle:
 		t126 = t18+t120
 		t143 = t134+t140
 
-		M = th.zeros((x.shape[0],8,8), device=self.device, dtype=self.th_dtype)
+		M = np.zeros((8,8))
 
-		M[:,0,0] = -t8*t11*t103+t7*t9*t130
-		M[:,1,0] = t4*t11*t131
-		M[:,2,0] = t103*(t3*t7-t8*t9*t11)
-		M[:,3,0] = t7*t85
-		M[:,5,0] = 1.0
+		M[0,0] = -t8*t11*t103+t7*t9*t130
+		M[1,0] = t4*t11*t131
+		M[2,0] = t103*(t3*t7-t8*t9*t11)
+		M[3,0] = t7*t85
+		M[5,0] = 1.0
 
-		M[:,0,1] = t7*t8*t103+t9*t11*t130
-		M[:,1,1] = -t4*t7*t131
-		M[:,2,1] = t103*t119
-		M[:,3,1] = t11*t85
-		M[:,6,1] = 1.0
+		M[0,1] = t7*t8*t103+t9*t11*t130
+		M[1,1] = -t4*t7*t131
+		M[2,1] = t103*t119
+		M[3,1] = t11*t85
+		M[6,1] = 1.0
 
-		M[:,1,2] = -t9*t131
-		M[:,2,2] = -t4*t8*t103
-		M[:,7,2] = 1.0
+		M[1,2] = -t9*t131
+		M[2,2] = -t4*t8*t103
+		M[7,2] = 1.0
 
-		M[:,0,3] = t53*t86+(t55*(Idyy+Idzz+t24+t28+t86+t110+t121+t41*t86))/2.0+t43*(t90*(t88+t89)+Idxx*t79+Ifxx*t53+Iwzz*t47+Ifzz*t3**2+Iwxx*t10**2)+(t44*t54*t58*t82)/2.0
-		M[:,1,3] = t4*(t116+t143+rw*t8*t109)*(-1.0/4.0)+t2*t5*t9*t59*t82
-		M[:,2,3] = t132+(t9*(Idyy+Idzz+t24+t93+t110))/2.0
-		M[:,3,3] = t9*(Iwyy+t118)
-		M[:,4,3] = t105
-		M[:,5,3] = rf*t8*t11-t7*t9*t84
-		M[:,6,3] = -rf*t7*t8-t9*t11*t84
+		M[0,3] = t53*t86+(t55*(Idyy+Idzz+t24+t28+t86+t110+t121+t41*t86))/2.0+t43*(t90*(t88+t89)+Idxx*t79+Ifxx*t53+Iwzz*t47+Ifzz*t3**2+Iwxx*t10**2)+(t44*t54*t58*t82)/2.0
+		M[1,3] = t4*(t116+t143+rw*t8*t109)*(-1.0/4.0)+t2*t5*t9*t59*t82
+		M[2,3] = t132+(t9*(Idyy+Idzz+t24+t93+t110))/2.0
+		M[3,3] = t9*(Iwyy+t118)
+		M[4,3] = t105
+		M[5,3] = rf*t8*t11-t7*t9*t84
+		M[6,3] = -rf*t7*t8-t9*t11*t84
 
-		M[:,0,4] = t9*t128-(t4*(t56*t83+t52*(Ifxx-Ifzz+t86)-t98*(-Idxx+t88+t89)))/2.0
-		M[:,1,4] = Idxx/2.0+Idyy/4.0+Idzz/4.0+Ifxx/2.0+Ifzz/2.0+Iwxx/2.0+Iwzz/2.0+t86/2.0+t115/4.0+t122/4.0-t125/4.0+t133/4.0-(t39*t79*t99)/4.0
-		M[:,2,4] = t128
-		M[:,3,4] = 0.0
-		M[:,4,4] = t81
-		M[:,5,4] = -t4*t11*t84
-		M[:,6,4] = t4*t7*t84
-		M[:,7,4] = t9*t84
+		M[0,4] = t9*t128-(t4*(t56*t83+t52*(Ifxx-Ifzz+t86)-t98*(-Idxx+t88+t89)))/2.0
+		M[1,4] = Idxx/2.0+Idyy/4.0+Idzz/4.0+Ifxx/2.0+Ifzz/2.0+Iwxx/2.0+Iwzz/2.0+t86/2.0+t115/4.0+t122/4.0-t125/4.0+t133/4.0-(t39*t79*t99)/4.0
+		M[2,4] = t128
+		M[3,4] = 0.0
+		M[4,4] = t81
+		M[5,4] = -t4*t11*t84
+		M[6,4] = t4*t7*t84
+		M[7,4] = t9*t84
 
-		M[:,0,5] = t132+(t9*(Idyy+Idzz+t24+t93+t110+t121))/2.0
-		M[:,1,5] = t128
-		M[:,2,5] = Idyy/2.0+Idzz/2.0+Ifyy+t86+t110/2.0
-		M[:,3,5] = t118
-		M[:,5,5] = -t7*t60+rf*t8*t9*t11
-		M[:,6,5] = -rf*t119
-		M[:,7,5] = rf*t4*t8
+		M[0,5] = t132+(t9*(Idyy+Idzz+t24+t93+t110+t121))/2.0
+		M[1,5] = t128
+		M[2,5] = Idyy/2.0+Idzz/2.0+Ifyy+t86+t110/2.0
+		M[3,5] = t118
+		M[5,5] = -t7*t60+rf*t8*t9*t11
+		M[6,5] = -rf*t119
+		M[7,5] = rf*t4*t8
 
-		M[:,0,6] = Iwyy*t9
-		M[:,3,6] = Iwyy
-		M[:,5,6] = -rw*t7
-		M[:,6,6] = -rw*t11
+		M[0,6] = Iwyy*t9
+		M[3,6] = Iwyy
+		M[5,6] = -rw*t7
+		M[6,6] = -rw*t11
 
-		M[:,0,7] = t105
-		M[:,1,7] = t81
-		M[:,4,7] = Idxx
+		M[0,7] = t105
+		M[1,7] = t81
+		M[4,7] = Idxx
 
 		t139 = t9*t59*t126
 		et1 = t35*(rw*t8*t9*t104*4.0+t2*t4*t5*t59*t82*4.0)*(-1.0/4.0)-(v_ne*(Idxx*(t4*t58*v_om-t9*t59*v_th)*8.0-t39*t100*(t9*t59*v_th*2.0+t4*t58*(t72*2.0+v_om)*2.0)+t44*t82*(t9*v_om*8.0+v_ph*(t79*4.0-t42*t107*2.0)-t4*t98*v_th*4.0)))/8.0+(t36*(t9*(t116+t143)+t4*t44*t59*t99))/4.0+(v_th*(v_ph*(t135+t54*(t25+t29+t67+t68+t69+t71+t93+t94+t115+t122+t127+t133+t107*t110))+t4*(v_om*(Idyy+Idzz+t24+t93+t125-t133+t39*t79*t99)+v_ps*(t28-t46*t83*2.0))*2.0))/4.0+v_ph*(fcoeff-rw*t8*t72*t104+t43*t56*t83*v_ps)
 		et2 = v_om*v_ph*(t43*t143*-2.0+rw*t8*t55*t109*2.0+t44*t54*t59*t82*2.0)*(-1.0/4.0)
 
-		nle = th.zeros((x.shape[0],8,1), device=self.device, dtype=self.th_dtype)
-		nle[:,0,0] = et1+et2
-		nle[:,1,0] = t37*(t135+t54*(t21+t25+t29+t62+t63+t67+t68+t69+t71+t93+t115+t122+t133+t18*t97-t89*t97*2.0+t40*(Idyy+t64*t90)*4.0+t39*(Idyy+t65)))*(-1.0/8.0)-(v_ph*(v_om*(t4*(Idyy+Idzz+t24+t93+t122+t127+t129+t133)-t9*t44*t58*t99)+t4*v_ps*(Iwyy+t46*t83)*2.0))/2.0-(v_th*(v_om*(t134*2.0-t98*(t94-t110)*2.0+rw*t8*t109*2.0)+t56*v_ps*(Iwxx*4.0-Iwzz*4.0)))/4.0+(v_ne*(v_ph*(t136-t139)-t59*t126*v_om+t44*t79*t99*v_th))/2.0-g*t9*t131+(t35*t44*t58*t100)/8.0
-		nle[:,2,0] = -Tomega+(t36*t143)/4.0-v_ne*(v_ph*(t9*t44*t82-t4*t58*t117)+t44*t82*v_om-t59*t117*v_th)-(t37*(t43*t143-t44*t54*t59*t82))/4.0+(v_th*v_ph*(t4*(Idyy+Idzz+t24+t93+t127+t129+t133)*2.0-t9*t44*t58*t99*2.0))/4.0-g*t4*t8*t103
-		nle[:,3,0] = Tomega-rw*t8*t104*t114+t6*t10*t36*t83+t4*v_th*v_ph*(Iwyy+t121+t83*(t47*2.0-1.0))-t6*t10*t37*t43*t83
-		nle[:,4,0] = -Tneta-(v_th*(v_ph*(t136-t139)+t59*v_om*(t18+t111)))/2.0+(v_om*v_ph*(t9*t44*t82*2.0-t4*t58*t117*2.0))/2.0+(t35*t44*t82)/2.0+(t37*t99*(t2*t9+t4*t5*t58)*(t5*t9-t2*t4*t58))/2.0-(t36*t44*t79*t82)/2.0
-		nle[:,5,0] = t4*v_th*(t7*t84*v_ph-rf*t8*t11*v_om)*-2.0+t11*t60*t124+rf*t7*t8*t114+t9*t11*t36*t84+rw*t11*t87*v_ph
-		nle[:,6,0] = t4*v_th*(t11*t84*v_ph+rf*t7*t8*v_om)*-2.0-t7*t60*t124+rf*t8*t11*t114-t7*t9*t36*t84-rw*t7*t87*v_ph
-		nle[:,7,0] = t4*t35*t60+t4*t36*t84-rf*t8*t9*v_om*v_th*2.0
+		nle = np.zeros((8,1))
+		nle[0,0] = et1+et2
+		nle[1,0] = t37*(t135+t54*(t21+t25+t29+t62+t63+t67+t68+t69+t71+t93+t115+t122+t133+t18*t97-t89*t97*2.0+t40*(Idyy+t64*t90)*4.0+t39*(Idyy+t65)))*(-1.0/8.0)-(v_ph*(v_om*(t4*(Idyy+Idzz+t24+t93+t122+t127+t129+t133)-t9*t44*t58*t99)+t4*v_ps*(Iwyy+t46*t83)*2.0))/2.0-(v_th*(v_om*(t134*2.0-t98*(t94-t110)*2.0+rw*t8*t109*2.0)+t56*v_ps*(Iwxx*4.0-Iwzz*4.0)))/4.0+(v_ne*(v_ph*(t136-t139)-t59*t126*v_om+t44*t79*t99*v_th))/2.0-g*t9*t131+(t35*t44*t58*t100)/8.0
+		nle[2,0] = -Tomega+(t36*t143)/4.0-v_ne*(v_ph*(t9*t44*t82-t4*t58*t117)+t44*t82*v_om-t59*t117*v_th)-(t37*(t43*t143-t44*t54*t59*t82))/4.0+(v_th*v_ph*(t4*(Idyy+Idzz+t24+t93+t127+t129+t133)*2.0-t9*t44*t58*t99*2.0))/4.0-g*t4*t8*t103
+		nle[3,0] = Tomega-rw*t8*t104*t114+t6*t10*t36*t83+t4*v_th*v_ph*(Iwyy+t121+t83*(t47*2.0-1.0))-t6*t10*t37*t43*t83
+		nle[4,0] = -Tneta-(v_th*(v_ph*(t136-t139)+t59*v_om*(t18+t111)))/2.0+(v_om*v_ph*(t9*t44*t82*2.0-t4*t58*t117*2.0))/2.0+(t35*t44*t82)/2.0+(t37*t99*(t2*t9+t4*t5*t58)*(t5*t9-t2*t4*t58))/2.0-(t36*t44*t79*t82)/2.0
+		nle[5,0] = t4*v_th*(t7*t84*v_ph-rf*t8*t11*v_om)*-2.0+t11*t60*t124+rf*t7*t8*t114+t9*t11*t36*t84+rw*t11*t87*v_ph
+		nle[6,0] = t4*v_th*(t11*t84*v_ph+rf*t7*t8*v_om)*-2.0-t7*t60*t124+rf*t8*t11*t114-t7*t9*t36*t84-rw*t7*t87*v_ph
+		nle[7,0] = t4*t35*t60+t4*t36*t84-rf*t8*t9*v_om*v_th*2.0
 
 		# # Add baumgarte stabilization
-		# err_p, err_v = self._err_posvel_contact(x)
-		# nle[:,5:8,0] += ((2 * self.baumgarte_factor * err_v) + (self.baumgarte_factor**2 * err_p))
+		# err_p, err_v = self._err_posvel_contact(x[:,0])
+		# nle[5:8,0] += ((2 * self.baumgarte_factor * err_v) + (self.baumgarte_factor**2 * err_p))
 
-		acc = th.squeeze(th.linalg.solve(M, -nle), dim=2)
-		acc[:,6] -= acc[:,5]
+		acc = np.linalg.solve(M, -nle)
+		acc[6,0] -= acc[5,0]
 
-		dx = th.zeros((x.shape[0], 16), device=self.device, dtype=self.th_dtype)
-		dx[:,0] = vx
-		dx[:,1] = vy
-		dx[:,2] = vz
-		dx[:,3] = v_ph
-		dx[:,4] = v_th
-		dx[:,5] = v_om
-		dx[:,6] = v_ps - v_om
-		dx[:,7] = v_ne
+		dx = np.zeros((16, 1))
+		dx[0,0] = vx
+		dx[1,0] = vy
+		dx[2,0] = vz
+		dx[3,0] = v_ph
+		dx[4,0] = v_th
+		dx[5,0] = v_om
+		dx[6,0] = v_ps - v_om
+		dx[7,0] = v_ne
 
-		dx[:,8:16] = acc
+		dx[8:16,0] = acc[:,0]
 
 		return dx
 	
 	def dyn_full_ana(self, x, u):
-
+		
 		md = self.md
 		mf = self.mf
 		mw = self.mw
@@ -616,36 +577,36 @@ class GPUUnicycle:
 		al = self.alpha
 		fcoeff = self.fcoeff
 
-		# x = [x, y, z, ph, theta, om, turntable, vx, vy, vz, dph, dth, dom, dwheel, dturntable]
+		# x = [x, y, z, ph, th, om, turntable, vx, vy, vz, dph, dth, dom, dwheel, dturntable]
 		
-		ph = x[:,3]
-		theta = x[:,4]
-		om = x[:,5]
-		ps = x[:,6] + om
-		ne = x[:,7]
+		ph = x[3,0]
+		th = x[4,0]
+		om = x[5,0]
+		ps = x[6,0] + om
+		ne = x[7,0]
 
-		vx = x[:,8]
-		vy = x[:,9]
-		vz = x[:,10]
-		v_ph = x[:,11]
-		v_th = x[:,12]
-		v_om = x[:,13]
-		v_ps = x[:,14] + v_om
-		v_ne = x[:,15]
+		vx = x[8,0]
+		vy = x[9,0]
+		vz = x[10,0]
+		v_ph = x[11,0]
+		v_th = x[12,0]
+		v_om = x[13,0]
+		v_ps = x[14,0] + v_om
+		v_ne = x[15,0]
 
-		Tomega = -u[:,0]
-		Tneta = u[:,1]
+		Tomega = -u[0,0]
+		Tneta = u[1,0]
 
-		t2 = th.cos(ne)
-		t3 = th.cos(om)
-		t4 = th.cos(ph)
-		t5 = th.cos(ps)
-		t6 = th.cos(theta)
-		t7 = th.sin(ne)
-		t8 = th.sin(om)
-		t9 = th.sin(ph)
-		t10 = th.sin(ps)
-		t11 = th.sin(theta)
+		t2 = np.cos(ne)
+		t3 = np.cos(om)
+		t4 = np.cos(ph)
+		t5 = np.cos(ps)
+		t6 = np.cos(th)
+		t7 = np.sin(ne)
+		t8 = np.sin(om)
+		t9 = np.sin(ph)
+		t10 = np.sin(ps)
+		t11 = np.sin(th)
 		t12 = al+om
 		t13 = md+mf
 		t14 = md*rd
@@ -674,7 +635,7 @@ class GPUUnicycle:
 		t38 = om*2.0
 		t39 = ps*2.0
 		t41 = rw**2
-		t42 = theta*2.0
+		t42 = th*2.0
 		t43 = v_om**2
 		t44 = v_ph**2
 		t45 = v_th**2
@@ -693,33 +654,33 @@ class GPUUnicycle:
 		t105 = Ifzz/2.0
 		t106 = Iwxx/2.0
 		t107 = Iwzz/2.0
-		t46 = th.cos(t37)
+		t46 = np.cos(t37)
 		t47 = t2**2
-		t48 = th.cos(t38)
+		t48 = np.cos(t38)
 		t49 = t3**2
 		t50 = t4**2
 		t51 = t4**3
-		t52 = th.cos(t39)
+		t52 = np.cos(t39)
 		t53 = t5**2
-		t54 = th.cos(t42)
+		t54 = np.cos(t42)
 		t55 = t6**2
 		t56 = t14*2.0
 		t57 = t14*4.0
 		t58 = t16*2.0
 		t59 = t16*4.0
-		t60 = th.sin(t37)
+		t60 = np.sin(t37)
 		t61 = t7**2
-		t62 = th.sin(t38)
+		t62 = np.sin(t38)
 		t63 = t8**2
 		t64 = t9**2
 		t65 = t9**3
-		t66 = th.sin(t39)
+		t66 = np.sin(t39)
 		t67 = t10**2
-		t68 = th.sin(t42)
+		t68 = np.sin(t42)
 		t69 = t11**2
 		t71 = Iwyy*t11
-		t72 = th.cos(t12)
-		t73 = th.sin(t12)
+		t72 = np.cos(t12)
+		t73 = np.sin(t12)
 		t74 = rf*t3
 		t75 = mw+t13
 		t77 = -t18
@@ -781,9 +742,9 @@ class GPUUnicycle:
 		t140 = rf*t14*t71
 		t143 = t120*v_om
 		t147 = t6*t72*v_om
-		t151 = th.cos(t141)
+		t151 = np.cos(t141)
 		t152 = t11*t73*v_th
-		t153 = th.sin(t141)
+		t153 = np.sin(t141)
 		t155 = rw*t3*t96
 		t156 = -t122
 		t159 = t19+t80
@@ -2582,46 +2543,88 @@ class GPUUnicycle:
 		et45 = t768*t2502*(Idxx*t72*(t2379+Iwyy*(-t1215+t1575+(t409*(t995+t1127))/2.0+t1709*(t122-t208)+rf*t293*(-t1160+t1551+t178*t293*(t995+t1127)))+t71*(-t859+t1255+t254*(t677+t936)+t1461*(t122-t208)+rf*t293*(-t877+t1274+t4*t116*(t677+t936)))-rf*t6*t8*t2362)-Idxx*t6*t73*t2459)+t471*t2502*(Idxx*t72*(t2424+t11*t349*(t1499-t1893-t2028+t2144-t2276+rw*t4*(t1145+t254*(t1134+(t544*(t285-t414))/2.0)+t4*t116*(t851-t1154))))+Idxx*t6*t73*t2462)
 		et46 = t1754*t2506*(Idxx*t72*(t2417+rf*t55*t63*t178*(t400+t1004+t1151+t619*(t122-t208)+rw*t9*(-t597+t1039+t800*(t122-t208))+rw*t4*(t1038+t334*(t285-t414))))-Idxx*t6*t73*t2410)
 
-		dx = th.zeros((x.shape[0], 16), device=self.device, dtype=self.th_dtype)
-		dx[:,0] = vx
-		dx[:,1] = vy
-		dx[:,2] = vz
-		dx[:,3] = v_ph
-		dx[:,4] = v_th
-		dx[:,5] = v_om
-		dx[:,6] = v_ps - v_om
-		dx[:,7] = v_ne
-
-		dx[:,8] = et10+et11+et12+et13
-		dx[:,9] = et21+et22
-		dx[:,10] = et23+et24
-		dx[:,11] = et25+et26
-		dx[:,12] = et27+et28+et29
-		dx[:,13] = et30+et31
-		dx[:,14] = et39+et40+et41 - (et30+et31)
-		dx[:,15] = et42+et43+et44+et45+et46
+		dx = np.zeros((16,1))
+		dx[0,0] = vx
+		dx[1,0] = vy
+		dx[2,0] = vz
+		dx[3,0] = v_ph
+		dx[4,0] = v_th
+		dx[5,0] = v_om
+		dx[6,0] = v_ps - v_om
+		dx[7,0] = v_ne
+		
+		dx[8,0] = et10+et11+et12+et13
+		dx[9,0] = et21+et22
+		dx[10,0] = et23+et24
+		dx[11,0] = et25+et26
+		dx[12,0] = et27+et28+et29
+		dx[13,0] = et30+et31
+		dx[14,0] = et39+et40+et41 - (et30+et31)
+		dx[15,0] = et42+et43+et44+et45+et46
 
 		return dx
 	
-	def _enforce_bounds(self, state_):
-		# bound the independent dims and compute the dependent dims accordingly!
-		state_[:, self.independent_dims] = th.minimum(self.th_x_bounds[self.independent_dims,1], th.maximum(self.th_x_bounds[self.independent_dims,0], state_[:,self.independent_dims]))
-		err_p, err_v = self._err_posvel_contact(state_)
-		state_[:, :3] += (-err_p)
-		state_[:, 8:11] += (-err_v)
+	def _jacobian_contact(self, x):
+		# angles - [base_yaw, base_roll, base_pitch, wheel_pitch, dumbell_yaw]
+		rw = self.rw
+		rf = self.rf
+		ph = x[3]
+		th = x[4]
+		om = x[5]
+		ps = x[6] + om
+		ne = x[7]
 
-		return state_
+		J = np.zeros((3, 8))
+		J[0,0] = 1.
+		J[0,3] = -(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)) + rf*np.sin(ph)*np.sin(om)
+		J[0,4] = -(np.cos(th)*(rw + rf*np.cos(om))*np.sin(ph))
+		J[0,5] = -(rf*np.cos(ph)*np.cos(om)) + rf*np.sin(th)*np.sin(ph)*np.sin(om)
+		J[0,6] = -(rw*np.cos(ph))
+
+		J[1,1] = 1.
+		J[1,3] = -((rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)) - rf*np.cos(ph)*np.sin(om)
+		J[1,4] = np.cos(th)*np.cos(ph)*(rw + rf*np.cos(om))
+		J[1,5] = -(rf*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om)))
+		J[1,6] = -(rw*np.sin(ph))
+
+		J[2,2] = 1.
+		J[2,4] = (rw + rf*np.cos(om))*np.sin(th)
+		J[2,5] = rf*np.cos(th)*np.sin(om)
+
+		# v = ... + J[:,5] * v_om + J[:,6] * (v_ps + v_om)
+		# v = ... + (J[:,5] + J[:,6]) * v_om + J[:,6] * v_ps
+		J[:, 5] += J[:, 6]
+
+		return J
 	
-	def _err_posvel_contact(self, x):
+	def _jacobian_contact_trace(self, x):
+		
+		rw = self.rw
+		rf = self.rf
+		ph = x[3]
+		th = x[4]
+		om = x[5]
+		ps = x[6] + om
+		ne = x[7]
 
-		Rframe = th_get_rotation(x[:,5], x[:,4], x[:,3], device=self.device, dtype=self.th_dtype)
-		Rwheel = th_get_rotation(th.zeros(x.shape[0], device=self.device, dtype=self.th_dtype), x[:,4], x[:,3], device=self.device, dtype=self.th_dtype)
-		err_p = x[:,:3] + Rframe @ th.asarray([0., 0., -self.rf], device=self.device, dtype=self.th_dtype) + Rwheel @ th.asarray([0., 0., -self.rw], device=self.device, dtype=self.th_dtype)
-		err_p[:,:2] = 0.
-		c_J = self._jacobian_contact(x)
-		err_v = th.squeeze(th.bmm(c_J, th.unsqueeze(x[:, 8:], dim=2)), dim=2)
+		J = np.zeros((3, 8))
+		J[0,0] = 1.
+		J[0,3] = -(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)) + rf*np.sin(ph)*np.sin(om)
+		J[0,4] = -(np.cos(th)*(rw + rf*np.cos(om))*np.sin(ph))
+		J[0,5] = -(rf*np.cos(ph)*np.cos(om)) + rf*np.sin(th)*np.sin(ph)*np.sin(om)
+		
+		J[1,1] = 1.
+		J[1,3] = -((rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)) - rf*np.cos(ph)*np.sin(om)
+		J[1,4] = np.cos(th)*np.cos(ph)*(rw + rf*np.cos(om))
+		J[1,5] = -(rf*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om)))
 
-		return err_p, err_v
+		J[2,2] = 1.
+		J[2,4] = (rw + rf*np.cos(om))*np.sin(th)
+		J[2,5] = rf*np.cos(th)*np.sin(om)
+
+		J[:, 5] += J[:, 6]
+
+		return J
 	
 	def _jacobian_com(self, x):
 
@@ -2633,100 +2636,105 @@ class GPUUnicycle:
 		rf = self.rf
 		rd = self.rd
 
-		ph = x[:,3]
-		theta = x[:,4]
-		om = x[:,5]
-		ps = x[:,6] + om
-		ne = x[:,7]
+		ph = x[3]
+		th = x[4]
+		om = x[5]
+		ps = x[6] + om
+		ne = x[7]
 
-		J = th.zeros((self.num_envs, 3, 8), device=self.device, dtype=self.th_dtype)
-		J[:,0,0] = 1.
-		J[:,0,3] = ((md*rd - mw*rf)*(th.cos(ph)*th.cos(om)*th.sin(theta) - th.sin(ph)*th.sin(om)))/(md + mf + mw)
-		J[:,0,4] = ((md*rd - mw*rf)*th.cos(theta)*th.cos(om)*th.sin(ph))/(md + mf + mw)
-		J[:,0,5] = ((md*rd - mw*rf)*(th.cos(ph)*th.cos(om) - th.sin(theta)*th.sin(ph)*th.sin(om)))/(md + mf + mw)
+		J = np.zeros((3, 8))
+		J[0,0] = 1.
+		J[0,3] = ((md*rd - mw*rf)*(np.cos(ph)*np.cos(om)*np.sin(th) - np.sin(ph)*np.sin(om)))/(md + mf + mw)
+		J[0,4] = ((md*rd - mw*rf)*np.cos(th)*np.cos(om)*np.sin(ph))/(md + mf + mw)
+		J[0,5] = ((md*rd - mw*rf)*(np.cos(ph)*np.cos(om) - np.sin(th)*np.sin(ph)*np.sin(om)))/(md + mf + mw)
 
-		J[:,1,1] = 1.
-		J[:,1,3] = ((md*rd - mw*rf)*(th.cos(om)*th.sin(theta)*th.sin(ph) + th.cos(ph)*th.sin(om)))/(md + mf + mw)
-		J[:,1,4] = ((-(md*rd) + mw*rf)*th.cos(theta)*th.cos(ph)*th.cos(om))/(md + mf + mw)
-		J[:,1,5] = ((md*rd - mw*rf)*(th.cos(om)*th.sin(ph) + th.cos(ph)*th.sin(theta)*th.sin(om)))/(md + mf + mw)
+		J[1,1] = 1.
+		J[1,3] = ((md*rd - mw*rf)*(np.cos(om)*np.sin(th)*np.sin(ph) + np.cos(ph)*np.sin(om)))/(md + mf + mw)
+		J[1,4] = ((-(md*rd) + mw*rf)*np.cos(th)*np.cos(ph)*np.cos(om))/(md + mf + mw)
+		J[1,5] = ((md*rd - mw*rf)*(np.cos(om)*np.sin(ph) + np.cos(ph)*np.sin(th)*np.sin(om)))/(md + mf + mw)
 
-		J[:,2,2] = 1.
-		J[:,2,4] = ((-(md*rd) + mw*rf)*th.cos(om)*th.sin(theta))/(md + mf + mw)
-		J[:,2,5] = ((-(md*rd) + mw*rf)*th.cos(theta)*th.sin(om))/(md + mf + mw)
+		J[2,2] = 1.
+		J[2,4] = ((-(md*rd) + mw*rf)*np.cos(om)*np.sin(th))/(md + mf + mw)
+		J[2,5] = ((-(md*rd) + mw*rf)*np.cos(th)*np.sin(om))/(md + mf + mw)
 
-		J[:,:,5] += J[:,:,6]
+		J[:, 5] += J[:, 6]
 
 		return J
+
+	def _accdrift_contact(self, x):
+
+		rw = self.rw
+		rf = self.rf
+		ph = x[3]
+		th = x[4]
+		om = x[5]
+		ps = x[6] + om
+		ne = x[7]
+		v_ph = x[11]
+		v_th = x[12]
+		v_om = x[13]
+		v_ps = x[14] + v_om
+		v_ne = x[15]
+
+		d = np.zeros(3)
+		d[0] = (rw + rf*np.cos(om))*np.sin(th)*np.sin(ph)*v_th**2 + rw*np.sin(ph)*v_ph*(np.sin(th)*v_ph + v_ps) + 2*np.cos(th)*v_th*(-(np.cos(ph)*(rw + rf*np.cos(om))*v_ph) + rf*np.sin(ph)*np.sin(om)*v_om) + rf*np.cos(ph)*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2) + rf*np.cos(om)*np.sin(ph)*(2*v_ph*v_om + np.sin(th)*(v_ph**2 + v_om**2))
+		d[1] = -(np.cos(ph)*(rw + rf*np.cos(om))*np.sin(th)*v_th**2) - rw*np.cos(ph)*v_ph*(np.sin(th)*v_ph + v_ps) - 2*np.cos(th)*v_th*((rw + rf*np.cos(om))*np.sin(ph)*v_ph + rf*np.cos(ph)*np.sin(om)*v_om) + rf*np.sin(ph)*np.sin(om)*(v_ph**2 + 2*np.sin(th)*v_ph*v_om + v_om**2) - rf*np.cos(ph)*np.cos(om)*(2*v_ph*v_om + np.sin(th)*(v_ph**2 + v_om**2))
+		d[2] = np.cos(th)*(rw + rf*np.cos(om))*v_th**2 - 2*rf*np.sin(th)*np.sin(om)*v_th*v_om + rf*np.cos(th)*np.cos(om)*v_om**2
+
+		return d
 	
-	def _jacobian_contact_trace(self, x):
+	def _err_posvel_contact(self, x):
+
+		Rframe = transfm.Rotation.from_euler('yxz', [x[5], x[4], x[3]]).as_matrix()
+		Rwheel = transfm.Rotation.from_euler('yxz', [0., x[4], x[3]]).as_matrix()
+		err_p = x[:3] + Rframe @ np.array([0., 0., -self.rf]) + Rwheel @ np.array([0., 0., -self.rw])
+		err_p[:2] = 0.
+		c_J = self._jacobian_contact(x)
+		err_v = c_J @ x[8:]
+
+		return err_p, err_v
+	
+	def _err_acc_contact(self, x, u):
+
+		dx = self.dyn_full(x[:,np.newaxis], u[:,np.newaxis])
+		c_J = self._jacobian_contact(x)
+		c_d = self._accdrift_contact(x)
+		err_a = c_J @ dx[8:,0] + c_d
+
+		return err_a
+
+	def _create_visualizer(self):
+		self.viz = meshcat.Visualizer()
+		# Create the unicycle geometry
+		self.viz['root'].set_object(meshcat.geometry.Box([0.04, 0.04, 2*self.rf]))  # units in meters
+
+		wheel_color = 0x282828
+		wheel_radii = np.array([self.rw, 0.04, self.rw])
+		wheel_reflectivity = 0.9
+		self.viz['root']['wheel'].set_object(
+			meshcat.geometry.Ellipsoid(radii=wheel_radii),
+			meshcat.geometry.MeshLambertMaterial(color=wheel_color, reflectivity=wheel_reflectivity)
+		)
 		
-		mw = self.mw
-		mf = self.mf
-		md = self.md
+		wheel_ori_color = 0x880808
+		wheel_ori_reflectivity = 0.95
+		self.viz['root']['wheel']['wheel_marker'].set_object(
+			meshcat.geometry.TriangularMeshGeometry(
+				vertices=np.array([[0.02, wheel_radii[1], 0.], [-0.02, wheel_radii[1], 0.], [0., wheel_radii[1], -0.9*wheel_radii[2]]]),
+				faces=np.array([[0, 1, 2]])
+			),
+			meshcat.geometry.MeshLambertMaterial(color=wheel_ori_color, reflectivity=wheel_ori_reflectivity)
+		)
 
-		rw = self.rw
-		rf = self.rf
-		rd = self.rd
-
-		ph = x[:,3]
-		theta = x[:,4]
-		om = x[:,5]
-		ps = x[:,6] + om
-		ne = x[:,7]
-
-		J = th.zeros((self.num_envs, 3, 8), device=self.device, dtype=self.th_dtype)
-		J[:,0,0] = 1.
-		J[:,0,3] = -(th.cos(ph)*(rw + rf*th.cos(om))*th.sin(theta)) + rf*th.sin(ph)*th.sin(om)
-		J[:,0,4] = -(th.cos(theta)*(rw + rf*th.cos(om))*th.sin(ph))
-		J[:,0,5] = -(rf*th.cos(ph)*th.cos(om)) + rf*th.sin(theta)*th.sin(ph)*th.sin(om)
-		
-		J[:,1,1] = 1.
-		J[:,1,3] = -((rw + rf*th.cos(om))*th.sin(theta)*th.sin(ph)) - rf*th.cos(ph)*th.sin(om)
-		J[:,1,4] = th.cos(theta)*th.cos(ph)*(rw + rf*th.cos(om))
-		J[:,1,5] = -(rf*(th.cos(om)*th.sin(ph) + th.cos(ph)*th.sin(theta)*th.sin(om)))
-
-		J[:,2,2] = 1.
-		J[:,2,4] = (rw + rf*th.cos(om))*th.sin(theta)
-		J[:,2,5] = rf*th.cos(theta)*th.sin(om)
-
-		J[:,:,5] += J[:,:,6]
-
-		return J
-
-	def _jacobian_contact(self, x):
-		rw = self.rw
-		rf = self.rf
-		ph = x[:, 3]
-		theta = x[:, 4]
-		om = x[:, 5]
-		ps = x[:, 6] + om
-		ne = x[:, 7]
-
-		J = th.zeros((self.num_envs, 3, 8), device=self.device, dtype=self.th_dtype)
-		J[:,0,0] = 1.
-		J[:,0,3] = -(th.cos(ph)*(rw + rf*th.cos(om))*th.sin(theta)) + rf*th.sin(ph)*th.sin(om)
-		J[:,0,4] = -(th.cos(theta)*(rw + rf*th.cos(om))*th.sin(ph))
-		J[:,0,5] = -(rf*th.cos(ph)*th.cos(om)) + rf*th.sin(theta)*th.sin(ph)*th.sin(om)
-		J[:,0,6] = -(rw*th.cos(ph))
-
-		J[:,1,1] = 1.
-		J[:,1,3] = -((rw + rf*th.cos(om))*th.sin(theta)*th.sin(ph)) - rf*th.cos(ph)*th.sin(om)
-		J[:,1,4] = th.cos(theta)*th.cos(ph)*(rw + rf*th.cos(om))
-		J[:,1,5] = -(rf*(th.cos(om)*th.sin(ph) + th.cos(ph)*th.sin(theta)*th.sin(om)))
-		J[:,1,6] = -(rw*th.sin(ph))
-
-		J[:,2,2] = 1.
-		J[:,2,4] = (rw + rf*th.cos(om))*th.sin(theta)
-		J[:,2,5] = rf*th.cos(theta)*th.sin(om)
-
-		# v = ... + J[:,5] * v_om + J[:,6] * (v_ps + v_om)
-		# v = ... + (J[:,5] + J[:,6]) * v_om + J[:,6] * v_ps
-		J[:,:,5] += J[:,:,6]
-
-		return J
+		upper_body_color = 0x880808
+		upper_body_reflectivity = 0.95
+		self.viz['root']['upper_body'].set_object(
+			meshcat.geometry.Box([0.4, 0.04, 0.04]),
+			meshcat.geometry.MeshLambertMaterial(color=upper_body_color, reflectivity=upper_body_reflectivity)
+		)
 	
 	def _update_visualizer(self):
-		#TODO visualize all the agents in parallel
+		
 		poseB = np.eye(4)
 		poseB[:3,3] = self.state[:3]
 		poseB[:3,:3] = transfm.Rotation.from_euler('yxz', [self.state[5],  self.state[4], self.state[3]]).as_matrix()

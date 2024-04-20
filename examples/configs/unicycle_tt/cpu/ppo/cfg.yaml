@@ -1,0 +1,49 @@
+environment:
+  name: UnicycleTT-v0
+  num_envs: 7
+  normalized_rewards: False
+  environment_kwargs:
+    trajectory_file: 'trajectory_sine.mat'
+    param:
+      T: 6
+      dt: 0.0075
+    fixed_starts: false
+    intermittent_starts: false
+    reference_trajectory_horizon: 1.2
+    normalized_actions: true
+    normalized_observations: true
+    nonlinear_cost: True
+    alpha_track_cost: 1
+    alpha_balance_cost: 1
+    alpha_action_cost: 1
+    alpha_terminal_cost: 1
+
+algorithm:
+  name: 'PPO'
+  total_timesteps: 20000000
+  save_every_timestep: 20000000
+  algorithm_kwargs:
+    gamma: 0.9999
+    gae_lambda: 0.99
+    ent_coef: 0.
+    vf_coef: 0.5
+    normalize_advantage: False
+    max_grad_norm: 0.9216909281395821
+    learning_rate: 0.0009034
+    learning_rate_schedule: 
+      type: 'lin'
+    n_steps: 1036
+    n_epochs: 7
+    batch_size: null
+    clip_range: 0.2
+
+policy:
+  save_prefix: 'model'
+  policy_kwargs:
+    net_arch:
+      pi: [256, 256, 256]
+      vf: [256, 256, 256]
+    activation_fn: 'relu'
+    optimizer_class: 'rmsprop'
+    log_std_init: -2.067521056483639
+    ortho_init: True
