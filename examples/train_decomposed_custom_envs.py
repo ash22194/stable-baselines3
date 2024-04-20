@@ -13,7 +13,7 @@ import gymnasium as gym
 import numpy as np
 from typing import Callable, Dict
 
-from stable_baselines3.gpu_systems import GPUQuadcopter, GPUQuadcopterTT, GPUUnicycle
+from stable_baselines3.gpu_systems import GPUQuadcopter, GPUQuadcopterTT, GPUQuadcopterDecomposition, GPUUnicycle
 
 from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.callbacks import BaseCallback, CustomSaveLogCallback, CustomEvalCallback, StopTrainingOnNoModelImprovement
@@ -33,6 +33,8 @@ def initialize_environment(environment_args, env_device: str= 'cpu'):
 			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		elif (environment_args.get('name')=='GPUQuadcopterTT'):
 			env = GPUQuadcopterTT(device=env_device, **(environment_args.get('environment_kwargs', dict())))
+		elif (environment_args.get('name')=='GPUQuadcopterDecomposition'):
+			env = GPUQuadcopterDecomposition(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		elif (environment_args.get('name')=='GPUUnicycle'):
 			env = GPUUnicycle(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		else:
@@ -175,6 +177,9 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 		elif (node_environment_args.get('name')=='GPUQuadcopterTT'):
 			env = GPUQuadcopterTT(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
 			eval_envname = 'QuadcopterTT-v0'
+		elif (node_environment_args.get('name')=='GPUQuadcopterDecomposition'):
+			env = GPUQuadcopterDecomposition(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
+			eval_envname = 'QuadcopterDecomposition-v0'
 		elif (node_environment_args.get('name')=='GPUUnicycle'):
 			env = GPUUnicycle(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
 			eval_envname = 'Unicycle-v0'

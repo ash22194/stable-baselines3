@@ -245,12 +245,12 @@ class DecompositionActionMlpExtractor(nn.Module):
         feature_dim: int,
         net_arch: dict,
         activation_fn: nn.ReLU,
-        device='cpu',
+        device: Union[th.device, str] = "auto",
         with_scaling=False
     ):
         super().__init__()
         # net_arch['pi'] - [[[u_i], [x_i], [hidden_modules]] for i over the subgroups of actions]
-
+        device = get_device(device)
         self.selection_net = []
         self.policy_net = []
         self.latent_dim_pi = []
@@ -267,7 +267,7 @@ class DecompositionActionMlpExtractor(nn.Module):
                 selection_layer = selection_layer[:,net_arch['pi'][ii][1]]
             else:
                 NotImplementedError
-            self.selection_net.append(selection_layer)
+            self.selection_net.append(nn.parameter.Parameter(selection_layer, requires_grad=False))
 
             # build the policy network for the module
             module_action_map.append(net_arch['pi'][ii][0])
@@ -283,6 +283,7 @@ class DecompositionActionMlpExtractor(nn.Module):
             self.latent_dim_pi.append(last_layer_dim_pi)
             self.policy_net.append(nn.Sequential(*inputs_policy_net).to(device))
         
+        self.selection_net = nn.ParameterList(self.selection_net)
         self.policy_net = nn.ModuleList(self.policy_net)
         module_action_map = th.concatenate(tuple([th.asarray(mm) for mm in module_action_map]))
         assert th.unique(module_action_map).shape[0]==module_action_map.shape[0], 'control inputs cannot belong to two policy modules'
