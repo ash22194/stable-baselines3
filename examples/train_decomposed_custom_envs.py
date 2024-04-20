@@ -250,14 +250,16 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 		logger = configure(subpolicy_save_dir, format_strings=["stdout", "tensorboard"])
 		model.set_logger(logger)
 
-	callback = CustomSaveLogCallback(
-		save_every_timestep=node_algorithm_args.get('save_every_timestep', node_algorithm_args['total_timesteps']), 
-		save_path=subpolicy_save_dir, 
-		save_prefix=node_policy_args.get('save_prefix')
-	)
+	save_every_timestep = node_algorithm_args.get('save_every_timestep', node_algorithm_args['total_timesteps'])
+	# callback = CustomSaveLogCallback(
+	# 	save_every_timestep=save_every_timestep, 
+	# 	save_path=subpolicy_save_dir, 
+	# 	save_prefix=node_policy_args.get('save_prefix'),
+	# 	termination=dict(criteria='reward', threshold=0.025, repeat=10)
+	# )
 
-	# stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=12, min_evals=0, verbose=1)
-	# callback = CustomEvalCallback(eval_env, eval_freq=int(1000000/num_envs), n_eval_episodes=100, log_path=logger.get_dir(), callback_after_eval=stop_train_callback, verbose=1, save_model=save_model)
+	stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=node_algorithm_args.get('max_no_improvement_evals', 5), min_evals=node_algorithm_args.get('min_evals', 5), verbose=1)
+	callback = CustomEvalCallback(eval_env, eval_freq=int(save_every_timestep/num_envs), n_eval_episodes=node_algorithm_args.get('n_eval_episodes', 30), log_path=logger.get_dir(), callback_after_eval=stop_train_callback, verbose=1, save_model=save_model)
 
 	return model, callback
 
