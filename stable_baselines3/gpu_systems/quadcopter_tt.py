@@ -336,99 +336,111 @@ class GPUQuadcopterTT:
 
 	def _create_visualizer(self):
 		self.viz = meshcat.Visualizer()
-		# Create the quadcopter geometry
-		self.viz['root'].set_object(meshcat.geometry.Box([2*self.l, 0.01, 0.01]))  # units in meters
-		self.viz['root']['wing'].set_object(meshcat.geometry.Box([0.01, 2*self.l, 0.01]))
-		
-		motor_color = 0x505050
-		motor_reflectivity = 0.9
+		for id in range(self.num_envs):
+			a_id = 'root' + str(id)
 
-		self.viz['root']['motor1'].set_object(
-			meshcat.geometry.Cylinder(height=0.06, radius=0.03),
-			meshcat.geometry.MeshLambertMaterial(color=motor_color, reflectivity=motor_reflectivity))
-		poseC1 = np.eye(4)
-		poseC1[:3,:3] = transfm.Rotation.from_euler('yxz', [0., np.pi/2, 0.]).as_matrix()
-		poseC1[:3,3] = np.array([self.l, 0., 0.])
-		self.viz['root']['motor1'].set_transform(poseC1)
+			# Create the quadcopter geometry
+			self.viz['root'][a_id].set_object(meshcat.geometry.Box([2*self.l, 0.01, 0.01]))  # units in meters
+			self.viz['root'][a_id]['wing'].set_object(meshcat.geometry.Box([0.01, 2*self.l, 0.01]))
+			
+			motor_color = 0x505050
+			motor_reflectivity = 0.9
 
-		self.viz['root']['motor2'].set_object(
-			meshcat.geometry.Cylinder(height=0.06, radius=0.03),
-			meshcat.geometry.MeshLambertMaterial(color=motor_color, reflectivity=motor_reflectivity))
-		poseC2 = np.eye(4)
-		poseC2[:3,:3] = transfm.Rotation.from_euler('yxz', [0., np.pi/2, 0.]).as_matrix()
-		poseC2[:3,3] = np.array([0., self.l, 0.])
-		self.viz['root']['motor2'].set_transform(poseC2)
+			self.viz['root'][a_id]['motor1'].set_object(
+				meshcat.geometry.Cylinder(height=0.06, radius=0.03),
+				meshcat.geometry.MeshLambertMaterial(color=motor_color, reflectivity=motor_reflectivity))
+			poseC1 = np.eye(4)
+			poseC1[:3,:3] = transfm.Rotation.from_euler('yxz', [0., np.pi/2, 0.]).as_matrix()
+			poseC1[:3,3] = np.array([self.l, 0., 0.])
+			self.viz['root'][a_id]['motor1'].set_transform(poseC1)
 
-		self.viz['root']['motor3'].set_object(
-			meshcat.geometry.Cylinder(height=0.06, radius=0.03),
-			meshcat.geometry.MeshLambertMaterial(color=motor_color, reflectivity=motor_reflectivity))
-		poseC3 = np.eye(4)
-		poseC3[:3,:3] = transfm.Rotation.from_euler('yxz', [0., np.pi/2, 0.]).as_matrix()
-		poseC3[:3,3] = np.array([-self.l, 0., 0.])
-		self.viz['root']['motor3'].set_transform(poseC3)
+			self.viz['root'][a_id]['motor2'].set_object(
+				meshcat.geometry.Cylinder(height=0.06, radius=0.03),
+				meshcat.geometry.MeshLambertMaterial(color=motor_color, reflectivity=motor_reflectivity))
+			poseC2 = np.eye(4)
+			poseC2[:3,:3] = transfm.Rotation.from_euler('yxz', [0., np.pi/2, 0.]).as_matrix()
+			poseC2[:3,3] = np.array([0., self.l, 0.])
+			self.viz['root'][a_id]['motor2'].set_transform(poseC2)
 
-		self.viz['root']['motor4'].set_object(
-			meshcat.geometry.Cylinder(height=0.06, radius=0.03),
-			meshcat.geometry.MeshLambertMaterial(color=motor_color, reflectivity=motor_reflectivity))
-		poseC4 = np.eye(4)
-		poseC4[:3,:3] = transfm.Rotation.from_euler('yxz', [0., np.pi/2, 0.]).as_matrix()
-		poseC4[:3,3] = np.array([0., -self.l, 0.])
-		self.viz['root']['motor4'].set_transform(poseC4)
+			self.viz['root'][a_id]['motor3'].set_object(
+				meshcat.geometry.Cylinder(height=0.06, radius=0.03),
+				meshcat.geometry.MeshLambertMaterial(color=motor_color, reflectivity=motor_reflectivity))
+			poseC3 = np.eye(4)
+			poseC3[:3,:3] = transfm.Rotation.from_euler('yxz', [0., np.pi/2, 0.]).as_matrix()
+			poseC3[:3,3] = np.array([-self.l, 0., 0.])
+			self.viz['root'][a_id]['motor3'].set_transform(poseC3)
 
-		# self.viz['root']['pendulum'].set_object(
-		# 	meshcat.geometry.Box([0.01, 0.01, 0.9]),
-		# 	meshcat.geometry.MeshLambertMaterial(color=motor_color, reflectivity=motor_reflectivity))
-		# poseP = np.eye(4)
-		# poseP[:3,3] = np.array([0., 0., 0.45])
-		# self.viz['root']['pendulum'].set_transform(poseP)
+			self.viz['root'][a_id]['motor4'].set_object(
+				meshcat.geometry.Cylinder(height=0.06, radius=0.03),
+				meshcat.geometry.MeshLambertMaterial(color=motor_color, reflectivity=motor_reflectivity))
+			poseC4 = np.eye(4)
+			poseC4[:3,:3] = transfm.Rotation.from_euler('yxz', [0., np.pi/2, 0.]).as_matrix()
+			poseC4[:3,3] = np.array([0., -self.l, 0.])
+			self.viz['root'][a_id]['motor4'].set_transform(poseC4)
 
-		heading_color = 0x880808
-		heading_reflectivity = 0.95
-		self.viz['root']['heading'].set_object(
-			meshcat.geometry.TriangularMeshGeometry(
-				vertices=np.array([[0., self.l/3, 0.], [0., -self.l/3, 0.], [0.9*self.l, 0., 0.]]),
-				faces=np.array([[0, 1, 2]])
-			),
-			meshcat.geometry.MeshLambertMaterial(color=heading_color, reflectivity=heading_reflectivity)
-		)
+			# self.viz['root'][a_id]['pendulum'].set_object(
+			# 	meshcat.geometry.Box([0.01, 0.01, 0.9]),
+			# 	meshcat.geometry.MeshLambertMaterial(color=motor_color, reflectivity=motor_reflectivity))
+			# poseP = np.eye(4)
+			# poseP[:3,3] = np.array([0., 0., 0.45])
+			# self.viz['root'][a_id]['pendulum'].set_transform(poseP)
 
-		# create the trajectory waypoints
-		waypoint_size = [0.05, 0.05, 0.05]
-		waypoint_reflectivity = 0.9
-		waypoint_heading_color = 0xFFFFFF
-		start_color = 0x008000
-		interm_color = 0x884000
-		end_color = 0xFF0000
-		
-		for ii in range(self.reference_trajectory.shape[1]):
-			if (ii==0):
-				waypoint_color = start_color
-			elif (ii==(self.reference_trajectory.shape[1]-1)):
-				waypoint_color = end_color
-			else:
-				waypoint_color = interm_color
-
-			self.viz['traj_point_%d'%(ii)].set_object(meshcat.geometry.Ellipsoid(radii=waypoint_size),
-			meshcat.geometry.MeshLambertMaterial(color=waypoint_color, reflectivity=waypoint_reflectivity))
-			self.viz['traj_point_%d'%(ii)]['heading'].set_object(
+			heading_color = 0x880808
+			heading_reflectivity = 0.95
+			self.viz['root'][a_id]['heading'].set_object(
 				meshcat.geometry.TriangularMeshGeometry(
-					vertices=np.array([[0., waypoint_size[1]/2, 0.], [0., -waypoint_size[1]/2, 0.], [waypoint_size[0]*2, 0., 0.]]),
+					vertices=np.array([[0., self.l/3, 0.], [0., -self.l/3, 0.], [0.9*self.l, 0., 0.]]),
 					faces=np.array([[0, 1, 2]])
 				),
-				meshcat.geometry.MeshLambertMaterial(color=waypoint_heading_color, reflectivity=waypoint_reflectivity)
+				meshcat.geometry.MeshLambertMaterial(color=heading_color, reflectivity=heading_reflectivity)
 			)
-			waypoint_pose = np.eye(4)
-			waypoint_pose[:3,3] = self.reference_trajectory[:3,ii]
-			waypoint_pose[:3,:3] = transfm.Rotation.from_euler('yxz', [self.reference_trajectory[4,ii], self.reference_trajectory[3,ii], self.reference_trajectory[5,ii]]).as_matrix()
-			self.viz['traj_point_%d'%(ii)].set_transform(waypoint_pose)
+
+			# create the trajectory waypoints
+			waypoint_size = [0.05, 0.05, 0.05]
+			waypoint_reflectivity = 0.9
+			waypoint_heading_color = 0xFFFFFF
+			start_color = 0x008000
+			interm_color = 0x884000
+			end_color = 0xFF0000
+		
+			for ii in range(self.reference_trajectory.shape[1]):
+				if (ii==0):
+					waypoint_color = start_color
+				elif (ii==(self.reference_trajectory.shape[1]-1)):
+					waypoint_color = end_color
+				else:
+					waypoint_color = interm_color
+
+				self.viz[a_id]['traj_point_%d'%(ii)].set_object(meshcat.geometry.Ellipsoid(radii=waypoint_size),
+				meshcat.geometry.MeshLambertMaterial(color=waypoint_color, reflectivity=waypoint_reflectivity))
+				self.viz[a_id]['traj_point_%d'%(ii)]['heading'].set_object(
+					meshcat.geometry.TriangularMeshGeometry(
+						vertices=np.array([[0., waypoint_size[1]/2, 0.], [0., -waypoint_size[1]/2, 0.], [waypoint_size[0]*2, 0., 0.]]),
+						faces=np.array([[0, 1, 2]])
+					),
+					meshcat.geometry.MeshLambertMaterial(color=waypoint_heading_color, reflectivity=waypoint_reflectivity)
+				)
+				waypoint_pose = np.eye(4)
+				waypoint_pose[:3,3] = self.reference_trajectory[:3,ii]
+				waypoint_pose[:3,:3] = transfm.Rotation.from_euler('yxz', [self.reference_trajectory[4,ii], self.reference_trajectory[3,ii], self.reference_trajectory[5,ii]]).as_matrix()
+				self.viz[a_id]['traj_point_%d'%(ii)].set_transform(waypoint_pose)
 
 	def render(self, mode='human'):
 		if (not (hasattr(self, 'viz') and isinstance(self.viz, meshcat.Visualizer))):
 			self._create_visualizer()
-		pose = np.eye(4)
-		pose[:3,3] = self.state[:3]
-		pose[:3,:3] = transfm.Rotation.from_euler('yxz', [self.state[4], self.state[3], self.state[5]]).as_matrix()
-		self.viz['root'].set_transform(pose)
+
+		state_ = self.state.cpu().numpy()
+		for id in range(self.num_envs):
+			a_id = 'root' + str(id)
+
+			pose = np.eye(4)
+			pose[:3,3] = state_[id,:3]
+			pose[:3,:3] = transfm.Rotation.from_euler('yxz', [state_[id,4], state_[id,3], state_[id,5]]).as_matrix()
+			self.viz['root'][a_id].set_transform(pose)
+		
+		self.viz['root'].set_cam_pos([10*np.cos(np.pi/4 + 2*np.pi/self.horizon*self.step_count[0].cpu().numpy()), 10*np.sin(np.pi/4 + 2*np.pi/self.horizon*self.step_count[0].cpu().numpy()), 3])
+		self.viz['root'].set_cam_target([0, 0, 1])
+		return self.viz['root'].get_image()
 
 	def close (self):
 		pass

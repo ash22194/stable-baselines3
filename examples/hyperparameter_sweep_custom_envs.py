@@ -12,7 +12,7 @@ import numpy as np
 from typing import Callable, Dict
 
 from stable_baselines3 import A2CwReg, PPO, TD3
-from stable_baselines3.gpu_systems import GPUQuadcopter, GPUUnicycle
+from stable_baselines3.gpu_systems import GPUQuadcopter, GPUUnicycle, GPUQuadcopterTT
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize, GPUVecEnv
@@ -189,6 +189,8 @@ def initialize_model(cfg: Dict, save_dir: str, env_device: str):
 	if (env_device=='cuda'):
 		if (environment_args.get('name')=='GPUQuadcopter'):
 			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
+		elif (environment_args.get('name')=='GPUQuadcopterTT'):
+			env = GPUQuadcopterTT(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		elif (environment_args.get('name')=='GPUUnicycle'):
 			env = GPUUnicycle(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		else:

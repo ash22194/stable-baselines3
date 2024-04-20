@@ -192,10 +192,18 @@ def main():
 		ff_basename = os.path.basename(ff)
 		ff_name, ff_ext = os.path.splitext(ff_basename)
 		if (ff_ext == '.zip'):
-			ff_save_id = int(ff_name.split('_')[-1])
-			if (ff_save_id > curr_save_id):
-				curr_save_id = ff_save_id
-				ff_load = ff
+			try:
+				ff_save_id = ff_name.split('_')[-1]
+				if (ff_save_id=='final'):
+					ff_load = ff
+					curr_save_id = np.inf
+				else:
+					ff_save_id = int(ff_save_id)
+					if (ff_save_id > curr_save_id):
+						curr_save_id = ff_save_id
+						ff_load = ff
+			except ValueError:
+				pass
 
 		elif (ff_ext == '.yaml'):
 			cfg = YAML().load(open(ff, 'r'))
@@ -205,6 +213,7 @@ def main():
 	check_env(test_env)
 
 	if (cfg['algorithm']['name'] == 'PPO'):
+		print('Loading %s'%ff_load)
 		model = PPO.load(ff_load)
 	elif (cfg['algorithm']['name'] == 'A2C'):
 		pass
