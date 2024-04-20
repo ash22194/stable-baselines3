@@ -170,6 +170,10 @@ class DiagGaussianDistribution(Distribution):
         :param log_std:
         :return:
         """
+        if (self.mask.get_device()!=log_std.get_device()):
+            self.mask = self.mask.to(log_std.get_device())
+            self.offset = self.offset.to(log_std.get_device())
+
         action_std = th.ones_like(mean_actions) * (log_std.exp() * self.mask + self.offset)
         self.distribution = Normal(mean_actions, action_std)
         return self

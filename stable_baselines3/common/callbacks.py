@@ -2,7 +2,7 @@ import os
 import warnings
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional, Union
-
+import sys
 import gymnasium as gym
 import numpy as np
 
@@ -970,7 +970,7 @@ class CustomSaveLogCallback(BaseCallback):
 			self.model.save(os.path.join(self.save_path, self.save_prefix + '_' + str(save_id)))
 
 		continue_training = True
-		if (self.termination_criteria_count >= self.termination_repeat):
+		if (hasattr(self, "termination_criteria_count") and hasattr(self, "termination_repeat") and (self.termination_criteria_count >= self.termination_repeat)):
 			continue_training = False
 
 		return continue_training

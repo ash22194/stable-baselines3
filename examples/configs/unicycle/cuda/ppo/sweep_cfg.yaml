@@ -1,55 +1,51 @@
 criteria:
   type: 'final_err'
-  num_episodes: 20
+  num_episodes: 50
 
 environment:
   num_envs:
     type: 'int'
-    low: 500
-    high: 1000
+    low: 300
+    high: 900
+    log: True
   
-  alpha_cost:
-    type: 'float'
-    low: 0.01
-    high: 10
-    log: True
-
-  alpha_terminal_cost:
-    type: 'float'
-    low: 0.01
-    high: 10
-    log: True
+  dt:
+    type: 'categorical'
+    choices: [0.005, 0.004]
 
 algorithm:
   n_steps:
     type: 'int'
-    low: 50
-    high: 500
+    low: 10
+    high: 100
+    log: True
+
+  batch_size:
+    type: 'categorical'
+    choices: [0.1, 0.2]
+
+  n_epochs:
+    type: 'categorical'
+    choices: [5, 10]
   
   learning_rate:
     type: 'float'
-    low: 0.00002
-    high: 0.002
+    low: 0.00001
+    high: 0.001
     log: True
 
   ent_coef:
     type: 'float'
     low: 0.000001
-    high: 0.1
+    high: 0.01
     log: True
 
-  max_grad_norm:
-    type: 'float'
-    low: 0.1
-    high: 5
-  
   clip_range:
-    type: 'float'
-    low: 0.05
-    high: 0.5
+    type: 'categorical'
+    choices: [0.05, 0.1]
 
 policy:
   log_std_init:
     type: 'float'
-    low: -4
-    high: -2
+    low: -3
+    high: 0.

@@ -1,7 +1,7 @@
 environment:
   name: GPUQuadcopter
   eval_envname: Quadcopter-v0
-  num_envs: 602
+  num_envs: 646
   normalized_rewards: false
   environment_kwargs:
     dt: 0.004
@@ -17,17 +17,18 @@ algorithm:
   algorithm_kwargs:
     gamma: 0.9984539792726858
     gae_lambda: 0.99
-    ent_coef: 0.0009916153167506478
+    ent_coef: 0.009871730492222603
     vf_coef: 0.5
     normalize_advantage: false
     max_grad_norm: 0.9216909281395821
-    learning_rate: 1.7723023590427873e-05
+    learning_rate: 1.5283609473524498e-05
     learning_rate_schedule:
-      type: lin
-    n_steps: 132
-    n_epochs: 15
-    batch_size: 3973
-    clip_range: 0.2
+      type: kla
+      target_kl: null
+    n_steps: 116
+    n_epochs: 5
+    batch_size: 18734
+    clip_range: 0.1
 
 policy:
   save_prefix: model
@@ -37,5 +38,5 @@ policy:
       vf: [256, 256, 256]
     activation_fn: relu
     optimizer_class: rmsprop
-    log_std_init: -0.034578540624727594
+    log_std_init: -0.01946188846120455
     ortho_init: true
