@@ -195,13 +195,15 @@ class QuadcopterTT(gym.Env):
 
 	def _update_tracking_error(self):
 		x = self.state[:,np.newaxis]
-		goal_t = self.goal[:,self.step_count:(self.step_count+1)]
+		t = min(self.step_count, self.horizon-1)
+		goal_t = self.goal[:,t:(t+1)]
 		y = (x - goal_t)[self.tracking_dims,:]
 		self.tracking_error += np.linalg.norm(y)
 
 	def _get_cost(self, action, state_):
 		x = self.state[:,np.newaxis]
-		goal_t = self.goal[:,self.step_count:(self.step_count+1)]
+		t = min(self.step_count, self.horizon-1)
+		goal_t = self.goal[:,t:(t+1)]
 		y = (x - goal_t)[self.cost_dims,:]
 
 		a = action[:,np.newaxis]
