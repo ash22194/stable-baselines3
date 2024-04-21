@@ -16,7 +16,7 @@ algorithm:
   total_timesteps: 30000000
   save_every_timestep: 200000
   min_evals: 0
-  max_no_improvement_evals: 5
+  max_no_improvement_evals: 20
   n_eval_episodes: 100
   algorithm_kwargs:
     gamma: 0.9984539792726858
