@@ -68,8 +68,8 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 	algorithm_args = cfg['algorithm']
 	if ('algorithm_kwargs' not in algorithm_args.keys()):
 		algorithm_args['algorithm_kwargs'] = dict()
-	if (env_device=='cuda'):
-		algorithm_args['algorithm_kwargs']['device'] = 'cuda'
+	if ((env_device=='cuda') or (env_device=='mps')):
+		algorithm_args['algorithm_kwargs']['device'] = env_device
 
 	if ('activation_fn' in policy_args['policy_kwargs'].keys()):
 		if (policy_args['policy_kwargs']['activation_fn'] == 'relu'):
@@ -102,7 +102,7 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 
 	# initialize the environment
 	num_envs = environment_args.get('num_envs')
-	if (env_device=='cuda'):
+	if ((env_device=='cuda') or (env_device=='mps')):
 		if (environment_args.get('name')=='GPUQuadcopter'):
 			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		elif (environment_args.get('name')=='GPUQuadcopterTT'):
@@ -189,7 +189,7 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 		# copy config file 
 		copyfile(config_file_path, os.path.join(logger.get_dir(), 'cfg.yaml'))
 		env_name = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(config_file_path))))
-		if (env_device=='cuda'):
+		if ((env_device=='cuda') or (env_device=='mps')):
 			class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/gpu_systems', env_name + '.py')
 		elif (env_device=='cpu'):
 			class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/systems', env_name + '.py')
@@ -220,12 +220,17 @@ def main():
 	algo = args.algorithm.lower()
 	run_id = args.run
 	env_device = args.env_device
+	device_dir = env_device
+	if (env_device == 'mps'):
+		device_dir = 'cuda'
+	elif not ((env_device=='cuda') or (env_device=='cpu')):
+		NotImplementedError
 	profile_run = args.profile
 
-	cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, env_device, algo, 'sweep_optimized_cfg.yaml')
+	cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, device_dir, algo, 'sweep_optimized_cfg.yaml')
 	if (not os.path.isfile(cfg_abs_path)):
-		cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, env_device, algo, 'cfg.yaml')
-	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, env_device)
+		cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, device_dir, algo, 'cfg.yaml')
+	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, device_dir)
 
 	model, callback, cfg = initialize_model(cfg_abs_path, algo, save_dir, run_id, env_device)
 
