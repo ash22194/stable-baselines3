@@ -10,7 +10,7 @@ class GPUQuadcopterTT:
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
-	def __init__(self, trajectory_file, device='cpu', num_envs=1, param=dict(), reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
+	def __init__(self, trajectory_file, device='cpu', num_envs=1, param=dict(), reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, intermittent_starts=False, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
 		m = 0.5
@@ -65,6 +65,10 @@ class GPUQuadcopterTT:
 		self.I = param['I']
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
+		if (intermittent_starts):
+			self.step_count_high = self.horizon
+		else:
+			self.step_count_high = 1
 		self.alpha_cost = alpha_cost
 		self.alpha_action_cost = alpha_action_cost
 		self.alpha_terminal_cost = alpha_terminal_cost
@@ -181,8 +185,8 @@ class GPUQuadcopterTT:
 
 			num_done = th.sum(done)
 			if (num_done > 0):
-				# step_count_new = th.randint(low=0, high=self.horizon, size=(num_done,1), dtype=self.th_dtype, device=self.device)
-				step_count_new = th.zeros((num_done, 1), device=self.device, dtype=self.th_dtype)
+				step_count_new = th.randint(low=0, high=self.step_count_high, size=(num_done,1), dtype=self.th_dtype, device=self.device)
+				# step_count_new = th.zeros((num_done, 1), device=self.device, dtype=self.th_dtype)
 				state_new = ((th.rand((num_done, self.independent_sampling_dims.shape[0]), device=self.device, dtype=self.th_dtype) - 0.5) * (self.th_x_sample_limits_range))
 				state_new = (((self.horizon - step_count_new) / self.horizon) * state_new)
 				state_new += (self.th_goal[step_count_new[:,0].to(dtype=th.int32),:] + th.unsqueeze(self.th_x_sample_limits_mid, dim=0))

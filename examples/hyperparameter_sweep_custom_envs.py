@@ -95,7 +95,10 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str, env_devi
 
 	# define pruning callback
 	eval_envname = cfg['environment'].get('eval_envname', cfg['environment']['name'])
-	eval_env = gym.make(eval_envname, **cfg['environment'].get('environment_kwargs', dict()))
+	eval_env_kwargs = cfg['environment'].get('environment_kwargs', dict())
+	if (eval_env_kwargs.get('intermittent_starts', None) is not None):
+		eval_env_kwargs['intermittent_starts'] = False
+	eval_env = gym.make(eval_envname, **eval_env_kwargs)
 	eval_every_timestep = cfg['algorithm'].get('save_every_timestep', None)
 	if (eval_every_timestep is None):
 		eval_every_timestep = cfg['algorithm']['total_timesteps']
@@ -109,7 +112,7 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str, env_devi
 	)
 
 	# create test env and test set
-	test_env = gym.make(eval_envname, **cfg['environment'].get('environment_kwargs', dict()))
+	test_env = gym.make(eval_envname, **eval_env_kwargs)
 	num_episodes = criteria.get('num_episodes', 20)
 	eval_metric = criteria.get('type', 'ep_discounted_reward')
 	if (not os.path.isfile(os.path.join(save_dir, 'test_starts.npy'))):

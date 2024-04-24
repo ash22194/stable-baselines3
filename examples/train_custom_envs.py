@@ -287,7 +287,10 @@ def main():
 
 	# evaluate the model
 	eval_envname = cfg['environment'].get('eval_envname', cfg['environment']['name'])
-	test_env = gym.make(eval_envname, **cfg['environment'].get('environment_kwargs', dict()))
+	eval_env_kwargs = cfg['environment'].get('environment_kwargs', dict())
+	if (eval_env_kwargs.get('intermittent_starts', None) is not None):
+		eval_env_kwargs['intermittent_starts'] = False
+	test_env = gym.make(eval_envname, **eval_env_kwargs)
 	for ee in range(5):
 		obs, _ = test_env.reset()
 		start = test_env.get_obs(normalized=False)
