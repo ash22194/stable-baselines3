@@ -181,6 +181,8 @@ class OnPolicyAlgorithm(BaseAlgorithm):
                     NotImplementedError
             else:
                 actions = actions.cpu().numpy()
+                actions_mu = actions_mu.cpu().numpy()
+                actions_log_std = actions_log_std.cpu().numpy()
                 # Rescale and perform action
                 clipped_actions = actions
                 if isinstance(self.action_space, spaces.Box):

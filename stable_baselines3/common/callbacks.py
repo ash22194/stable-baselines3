@@ -630,6 +630,14 @@ class CustomEvalCallback(EventCallback):
 
 		continue_training = True
 
+		# log terminal episodic info
+		terminal_infos = [info_i for ii, info_i in enumerate(self.locals['infos']) if self.locals['dones'][ii]]
+		if (len(terminal_infos) > 0):
+			terminal_statnames = [ts for ts in terminal_infos[0].keys() if (ts.startswith('ep_'))]
+			for ts in terminal_statnames:
+				ts_stat = [terminal_infos[ii][ts] for ii in range(len(terminal_infos)) if (not np.isnan(terminal_infos[ii][ts]))]
+				self.logger.record("rollout/" + ts, np.mean(ts_stat))
+
 		if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
 			# Sync training and eval env if there is VecNormalize
 			if self.model.get_vec_normalize_env() is not None:
