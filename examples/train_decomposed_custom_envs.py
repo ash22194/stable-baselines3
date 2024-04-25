@@ -167,35 +167,35 @@ def parse_decomposition_args(decomposition_args):
 
 	return decomposition_args
 
+def get_gpu_env(env_name: str, env_device: str, env_kwargs: Dict = dict()):
+
+	if (env_name=='GPUQuadcopter'):
+		env = GPUQuadcopter(device=env_device, **env_kwargs)
+	elif (env_name=='GPUQuadcopterTT'):
+		env = GPUQuadcopterTT(device=env_device, **env_kwargs)
+	elif (env_name=='GPUQuadcopterDecomposition'):
+		env = GPUQuadcopterDecomposition(device=env_device, **env_kwargs)
+	elif (env_name=='GPUUnicycle'):
+		env = GPUUnicycle(device=env_device, **env_kwargs)
+	else:
+		env = None
+	return env
+
 def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args: dict, node_policy_args: dict, subpolicy_save_dir: str, frozen_weights: dict, env_device: str = 'cpu', save_model: bool = False):
 
 	# create environment
 	# update environment config
 	# TODO: specify which inputs and state varaibles to fix in the dynamics
 	num_envs = node_environment_args.get('num_envs')
+	# eval_envname = node_environment_args.get('eval_envname', node_environment_args.get('name'))
+	eval_envname = node_environment_args.get('name')
+	n_eval_episodes = node_algorithm_args.get('n_eval_episodes', 30)
 	if ((env_device=='cuda') or (env_device=='mps')):
-		if (node_environment_args.get('name')=='GPUQuadcopter'):
-			env = GPUQuadcopter(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-			eval_env = GPUQuadcopter(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-		elif (node_environment_args.get('name')=='GPUQuadcopterTT'):
-			env = GPUQuadcopterTT(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-			eval_env = GPUQuadcopterTT(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-		elif (node_environment_args.get('name')=='GPUQuadcopterDecomposition'):
-			env = GPUQuadcopterDecomposition(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-			eval_env = GPUQuadcopterDecomposition(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-		elif (node_environment_args.get('name')=='GPUUnicycle'):
-			env = GPUUnicycle(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-			eval_env = GPUUnicycle(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-		else:
-			NotImplementedError
+		env = get_gpu_env(node_environment_args.get('name'), env_device, node_environment_args.get('environment_kwargs', dict()))
 		env = GPUVecEnv(env, num_envs=num_envs)
-		n_eval_episodes = node_algorithm_args.get('n_eval_episodes', 30)
-		eval_env.set_num_envs(n_eval_episodes)
-		n_eval_episodes = 1
+
+		eval_env = get_gpu_env(eval_envname, env_device, node_environment_args.get('environment_kwargs', dict()))
 	else:
-		eval_envname = node_environment_args['name']
-		eval_env = gym.make(eval_envname, **node_environment_args['environment_kwargs'])
-		n_eval_episodes = node_algorithm_args.get('n_eval_episodes', 30)
 		normalized_rewards = node_environment_args.get('normalized_rewards')
 		env = make_vec_env(
 			node_environment_args.get('name'), n_envs=num_envs, 
@@ -210,6 +210,14 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 				training=True,
 				gamma=node_algorithm_args['algorithm_kwargs'].get('gamma', 0.99)
 			)
+
+		eval_env = gym.make(eval_envname, **node_environment_args['environment_kwargs'])
+
+	if (eval_env is None):
+		eval_env = gym.make(eval_envname, **(node_environment_args.get('environment_kwargs', dict())))
+	else:
+		eval_env.set_num_envs(n_eval_episodes)
+		n_eval_episodes = 1
 
 	# check if saved model exist to load and restart training from
 	model_save_prefix = node_policy_args.get('save_prefix')
@@ -266,7 +274,7 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 	# 	save_every_timestep=save_every_timestep, 
 	# 	save_path=subpolicy_save_dir, 
 	# 	save_prefix=node_policy_args.get('save_prefix'),
-	# 	termination=dict(criteria='reward', threshold=0.025, repeat=10)
+	# 	# termination=dict(criteria='reward', threshold=0.025, repeat=10)
 	# )
 
 	stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=node_algorithm_args.get('max_no_improvement_evals', 5), min_evals=node_algorithm_args.get('min_evals', 5), verbose=1)
