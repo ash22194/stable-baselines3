@@ -111,6 +111,8 @@ class GPUQuadcopterDecomposition:
 		self.th_R = th.asarray(self.R, device=device, dtype=self.th_dtype)
 		self.th_u0 = th.asarray(self.u0[:,0], device=device, dtype=self.th_dtype)
 
+		self.th_action_space_low = th.asarray(self.action_space.low, device=device, dtype=self.th_dtype)
+		self.th_action_space_high = th.asarray(self.action_space.low, device=device, dtype=self.th_dtype)
 		self.th_x_sample_limits_mid = th.asarray(0.5*(self.x_sample_limits[:,0] + self.x_sample_limits[:,1]), device=device, dtype=self.th_dtype)
 		self.th_x_sample_limits_range = th.asarray((self.x_sample_limits[:,1] - self.x_sample_limits[:,0]), device=device, dtype=self.th_dtype)
 		self.th_obs_bounds_mid = th.asarray(obs_bounds_mid, device=device, dtype=self.th_dtype)
@@ -164,6 +166,7 @@ class GPUQuadcopterDecomposition:
 	def reset(self, done=None, seed=None, options=None, state=None):
 		if (state is not None):
 			assert (len(state.shape)==2 and state.shape[0]==self.num_envs and state.shape[1]==self.X_DIMS), 'Invalid input state'
+			state[:,self.X_DIMS_FIXED] = self.th_goal[self.X_DIMS_FIXED]
 			self.state[:] = state
 			self.step_count[:] = 0.
 			self.cumm_reward[:] = 0.

@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import sys
 import gymnasium as gym
 import numpy as np
+import torch as th
 
 from stable_baselines3.common.logger import Logger
 
@@ -570,19 +571,33 @@ class CustomEvalCallback(EventCallback):
 
 		self.eval_env = eval_env
 		self.best_model_save_path = best_model_save_path
+		try:
+			if (self.eval_env.spec.id in gym.registry.keys()):
+				is_gpu_env = False
+			else:
+				raise NotImplementedError('environment not found in gym registry')
+		except AttributeError:
+			is_gpu_env = True
 		if (type(fixed_starts)==bool) and (fixed_starts):
 			self.fixed_starts = []
-			for n in range(n_eval_episodes):
-				self.eval_env.reset()
-				self.fixed_starts += [self.eval_env.state.copy()]
-			self.fixed_starts = np.array(fixed_starts)
-			# save the sampled fixed starts
-			np.save(os.path.join(log_path, 'test_starts.npy'), self.fixed_starts, allow_pickle=False)
+			if (is_gpu_env):
+				for n in range(n_eval_episodes):
+					self.eval_env.reset()
+					self.fixed_starts += [self.eval_env.state.clone().detach()]
+				fixed_starts = np.array([ff.cpu().numpy() for ff in self.fixed_starts])
+			else:
+				for n in range(n_eval_episodes):
+					self.eval_env.reset()
+					self.fixed_starts += [self.eval_env.state.copy()]
+				fixed_starts = np.array(self.fixed_starts)
+			np.save(os.path.join(log_path, 'test_starts.npy'), fixed_starts, allow_pickle=False)
 		elif (type(fixed_starts)==str) and (os.path.isfile(fixed_starts)):
 			assert fixed_starts.endswith('.npy'), 'If supplying a file to load starts from, it must be .npy'
 			self.fixed_starts = np.load(fixed_starts, allow_pickle=False, mmap_mode=None)
+			if (is_gpu_env):
+				self.fixed_starts = [th.as_tensor(ff, dtype=self.eval_env.th_dtype, device=self.eval_env.device) for _, ff in enumerate(self.fixed_starts)]
 		else:
-			self.fixed_starts = np.array([None for ii in range(n_eval_episodes)])
+			self.fixed_starts = [None for ii in range(n_eval_episodes)]
 
 		# Logs will be written in ``evaluations.npz``
 		if log_path is not None:
@@ -652,8 +667,12 @@ class CustomEvalCallback(EventCallback):
 
 			# Reset success rate buffer
 			self._is_success_buffer = []
-
-			episode_rewards, episode_lengths = self._evaluate_policy()
+			try:
+				if (self.eval_env.spec.id in gym.registry.keys()):
+					episode_rewards, episode_lengths = self._evaluate_policy()
+			except AttributeError:
+				# if not a gym env then a gpu env
+				episode_rewards, episode_lengths = self._evaluate_policy_customgpuenv()
 
 			if self.log_path is not None:
 				assert isinstance(episode_rewards, list)
@@ -721,7 +740,7 @@ class CustomEvalCallback(EventCallback):
 
 		return continue_training
 	
-	def _evaluate_policy(self):
+	def _evaluate_policy_customgpuenv(self):
 
 		episode_rewards = []
 		episode_discounted_rewards = []
@@ -729,6 +748,41 @@ class CustomEvalCallback(EventCallback):
 
 		for ep in range(self.n_eval_episodes):
 			obs, _ = self.eval_env.reset()
+			done = th.zeros(obs.shape[0], dtype=th.bool, device=self.eval_env.device)
+			discount = th.ones(obs.shape[0], device=self.eval_env.device)
+			ep_reward = th.zeros(obs.shape[0], device=self.eval_env.device)
+			ep_discounted_reward = th.zeros(obs.shape[0], device=self.eval_env.device)
+			ep_length = th.zeros(obs.shape[0], device=self.eval_env.device)
+
+			while (not th.all(done)):
+				with th.no_grad():
+					action, _, _ = self.model.policy.forward(obs, deterministic=self.deterministic)
+				# clip action for consistency with bounds
+				action = th.clip(action, self.eval_env.th_action_space_low, self.eval_env.th_action_space_high)
+				obs, reward, done_, _, info = self.eval_env.step(action)
+				not_done = th.logical_not(done)
+				done = done_
+				reward = reward * not_done # add terminal value estimate -> if expecting episodes to be of different lengths?
+
+				ep_reward += reward
+				ep_discounted_reward += (discount*reward)
+				ep_length += not_done
+				discount *= self.model.gamma
+
+			episode_rewards.append(ep_reward.clone().cpu().numpy())
+			episode_discounted_rewards.append(ep_discounted_reward.clone().cpu().numpy())
+			episode_lengths.append(ep_length.clone().cpu().numpy())
+
+		return np.concatenate(episode_discounted_rewards).tolist(), np.concatenate(episode_lengths).tolist()
+
+	def _evaluate_policy(self):
+
+		episode_rewards = []
+		episode_discounted_rewards = []
+		episode_lengths = []
+
+		for ep in range(self.n_eval_episodes):
+			obs, _ = self.eval_env.reset(state=self.fixed_starts[ep])
 			done = False
 			discount = 1
 			ep_reward = 0

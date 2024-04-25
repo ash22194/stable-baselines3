@@ -10,6 +10,7 @@ from torch import nn
 from torch.distributions import Bernoulli, Categorical, Normal
 
 from stable_baselines3.common.preprocessing import get_action_dim
+from stable_baselines3.common.utils import get_device
 
 SelfDistribution = TypeVar("SelfDistribution", bound="Distribution")
 SelfDiagGaussianDistribution = TypeVar("SelfDiagGaussianDistribution", bound="DiagGaussianDistribution")
@@ -170,9 +171,14 @@ class DiagGaussianDistribution(Distribution):
         :param log_std:
         :return:
         """
-        if (self.mask.get_device()!=log_std.get_device()):
-            self.mask = self.mask.to(log_std.get_device())
-            self.offset = self.offset.to(log_std.get_device())
+        log_std_device = log_std.get_device()
+        if (self.mask.get_device()!=log_std_device):
+            if (log_std.get_device()==0):
+                self.mask = self.mask.to(get_device('auto'))
+                self.offset = self.offset.to(get_device('auto'))
+            else:
+                self.mask = self.mask.to(log_std_device)
+                self.offset = self.offset.to(log_std_device)
 
         action_std = th.ones_like(mean_actions) * (log_std.exp() * self.mask + self.offset)
         self.distribution = Normal(mean_actions, action_std)

@@ -162,7 +162,7 @@ def initialize_model(cfg: Dict, save_dir: str, env_device: str):
 	algorithm_args = deepcopy(cfg['algorithm'])
 	if ('algorithm_kwargs' not in algorithm_args.keys()):
 		algorithm_args['algorithm_kwargs'] = dict()
-	if (env_device=='cuda'):
+	if ((env_device=='cuda') or (env_device=='mps')):
 		algorithm_args['algorithm_kwargs']['device'] = env_device
 
 	if ('activation_fn' in policy_args['policy_kwargs'].keys()):
@@ -189,7 +189,7 @@ def initialize_model(cfg: Dict, save_dir: str, env_device: str):
 	# initialize the environment
 	num_envs = environment_args.get('num_envs')
 	normalized_rewards = environment_args.get('normalized_rewards', False)
-	if (env_device=='cuda'):
+	if ((env_device=='cuda') or (env_device=='mps')):
 		if (environment_args.get('name')=='GPUQuadcopter'):
 			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		elif (environment_args.get('name')=='GPUQuadcopterTT'):
@@ -353,15 +353,20 @@ def main():
 	args = parser.parse_args()
 	env_name = args.env_name
 	env_device = args.env_device
+	device_dir = env_device
+	if (env_device == 'mps'):
+		device_dir = 'cuda'
+	elif not ((env_device=='cuda') or (env_device=='cpu')):
+		NotImplementedError
 	algo = args.algorithm.lower()
 	num_trials = args.num_trials
 
 	# load cfg files
-	default_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, env_device, algo, 'cfg.yaml')
-	sweep_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, env_device, algo, 'sweep_cfg.yaml') 
+	default_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, device_dir, algo, 'cfg.yaml')
+	sweep_cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, device_dir, algo, 'sweep_cfg.yaml') 
 	if (env_device=='cpu'):
 		class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/systems', env_name + '.py')
-	elif (env_device=='cuda'):
+	elif ((env_device=='cuda') or (env_device=='mps')):
 		class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/gpu_systems', env_name + '.py')
 	else:
 		ValueError
@@ -371,7 +376,7 @@ def main():
 	sweep_cfg = YAML().load(open(sweep_cfg_abs_path, 'r'))
 	
 	# create save directory
-	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, env_device, algo.upper(), 'sweeps')
+	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, device_dir, algo.upper(), 'sweeps')
 	if (not os.path.isdir(save_dir)):
 		os.mkdir(save_dir)
 	# find the current sweep number
@@ -414,7 +419,7 @@ def main():
 	sweep_storage = JournalStorage(JournalFileStorage(os.path.join(sweep_dir, "sweep_journal.log")))
 
 	# run trials
-	study_name = env_name + "_" + env_device + "_" + algo + "_sweep_" + str(sweep_number)
+	study_name = env_name + "_" + device_dir + "_" + algo + "_sweep_" + str(sweep_number)
 	wandb.login()
 	wandb_kwargs = {"project": study_name, "name": study_name}
 	wandbc = WeightsAndBiasesCallback(wandb_kwargs=wandb_kwargs, as_multirun=True)

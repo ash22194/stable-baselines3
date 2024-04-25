@@ -99,6 +99,8 @@ class GPUQuadcopter:
 		self.th_R = th.asarray(param['R'], device=device, dtype=self.th_dtype)
 		self.th_u0 = th.asarray(param['u0'][:,0], device=device, dtype=self.th_dtype)
 
+		self.th_action_space_low = th.asarray(self.action_space.low, device=device, dtype=self.th_dtype)
+		self.th_action_space_high = th.asarray(self.action_space.low, device=device, dtype=self.th_dtype)
 		self.th_x_sample_limits_mid = th.asarray(0.5*(param['x_sample_limits'][:,0] + param['x_sample_limits'][:,1]), device=device, dtype=self.th_dtype)
 		self.th_x_sample_limits_range = th.asarray((param['x_sample_limits'][:,1] - param['x_sample_limits'][:,0]), device=device, dtype=self.th_dtype)
 		self.th_obs_bounds_mid = th.asarray(obs_bounds_mid, device=device, dtype=self.th_dtype)

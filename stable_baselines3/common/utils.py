@@ -152,7 +152,10 @@ def get_device(device: Union[th.device, str] = "auto") -> th.device:
 
     # Cuda not available
     if device.type == th.device("cuda").type and not th.cuda.is_available():
-        return th.device("cpu")
+        if (th.backends.mps.is_available()):
+            return th.device("mps")
+        else:
+            return th.device("cpu")
 
     return device
 

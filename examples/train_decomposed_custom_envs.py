@@ -28,7 +28,7 @@ from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
 def initialize_environment(environment_args, env_device: str= 'cpu'):
 
 	num_envs = environment_args.get('num_envs')
-	if (env_device=='cuda'):
+	if ((env_device=='cuda') or (env_device=='mps')):
 		if (environment_args.get('name')=='GPUQuadcopter'):
 			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
 		elif (environment_args.get('name')=='GPUQuadcopterTT'):
@@ -67,7 +67,7 @@ def parse_common_args(cfg: dict, env_device: str = 'cpu'):
 	# setup algorithm parameters
 	if ('algorithm_kwargs' not in algorithm_args.keys()):
 		algorithm_args['algorithm_kwargs'] = dict()
-	if (env_device=='cuda'):
+	if ((env_device=='cuda') or (env_device=='mps')):
 		algorithm_args['algorithm_kwargs']['device'] = env_device
 	# check batch size
 	batch_size = algorithm_args['algorithm_kwargs'].get('batch_size', None)
@@ -173,24 +173,29 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 	# update environment config
 	# TODO: specify which inputs and state varaibles to fix in the dynamics
 	num_envs = node_environment_args.get('num_envs')
-	if (env_device=='cuda'):
+	if ((env_device=='cuda') or (env_device=='mps')):
 		if (node_environment_args.get('name')=='GPUQuadcopter'):
 			env = GPUQuadcopter(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-			eval_envname = 'Quadcopter-v0'
+			eval_env = GPUQuadcopter(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
 		elif (node_environment_args.get('name')=='GPUQuadcopterTT'):
 			env = GPUQuadcopterTT(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-			eval_envname = 'QuadcopterTT-v0'
+			eval_env = GPUQuadcopterTT(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
 		elif (node_environment_args.get('name')=='GPUQuadcopterDecomposition'):
 			env = GPUQuadcopterDecomposition(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-			eval_envname = 'QuadcopterDecomposition-v0'
+			eval_env = GPUQuadcopterDecomposition(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
 		elif (node_environment_args.get('name')=='GPUUnicycle'):
 			env = GPUUnicycle(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
-			eval_envname = 'Unicycle-v0'
+			eval_env = GPUUnicycle(device=env_device, **(node_environment_args.get('environment_kwargs', dict())))
 		else:
 			NotImplementedError
 		env = GPUVecEnv(env, num_envs=num_envs)
+		n_eval_episodes = node_algorithm_args.get('n_eval_episodes', 30)
+		eval_env.set_num_envs(n_eval_episodes)
+		n_eval_episodes = 1
 	else:
 		eval_envname = node_environment_args['name']
+		eval_env = gym.make(eval_envname, **node_environment_args['environment_kwargs'])
+		n_eval_episodes = node_algorithm_args.get('n_eval_episodes', 30)
 		normalized_rewards = node_environment_args.get('normalized_rewards')
 		env = make_vec_env(
 			node_environment_args.get('name'), n_envs=num_envs, 
@@ -205,8 +210,6 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 				training=True,
 				gamma=node_algorithm_args['algorithm_kwargs'].get('gamma', 0.99)
 			)
-	eval_envname = node_environment_args.get('eval_envname', eval_envname)
-	eval_env = gym.make(eval_envname, **node_environment_args['environment_kwargs'])
 
 	# check if saved model exist to load and restart training from
 	model_save_prefix = node_policy_args.get('save_prefix')
@@ -267,14 +270,14 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 	# )
 
 	stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=node_algorithm_args.get('max_no_improvement_evals', 5), min_evals=node_algorithm_args.get('min_evals', 5), verbose=1)
-	callback = CustomEvalCallback(eval_env, eval_freq=int(save_every_timestep/num_envs), n_eval_episodes=node_algorithm_args.get('n_eval_episodes', 30), log_path=logger.get_dir(), callback_after_eval=stop_train_callback, verbose=1, save_model=save_model)
+	callback = CustomEvalCallback(eval_env, eval_freq=int(save_every_timestep/num_envs), n_eval_episodes=n_eval_episodes, log_path=logger.get_dir(), callback_after_eval=stop_train_callback, verbose=1, save_model=save_model)
 
 	return model, callback
 
 def compute_decomposition_policies(config_file_path: str, algorithm: str, save_dir: str, run: int = None, env_device: str = 'cpu', save_model: bool = False):
 	
 	env_name = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(config_file_path))))
-	if (env_device=='cuda'):
+	if ((env_device=='cuda') or (env_device=='mps')):
 		class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/gpu_systems', env_name + '.py')
 	elif (env_device=='cpu'):
 		class_file_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../stable_baselines3/systems', env_name + '.py')
@@ -536,13 +539,18 @@ def main():
 	algo = args.algorithm.lower()
 	run_id = args.run
 	env_device = args.env_device
+	device_dir = env_device
+	if (env_device == 'mps'):
+		device_dir = 'cuda'
+	elif not ((env_device=='cuda') or (env_device=='cpu')):
+		NotImplementedError
 	save_model = args.save_intermittent_model
 	# profile_run = args.profile
 
-	cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, env_device, algo, 'sweep_optimized_cfg.yaml')
+	cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, device_dir, algo, 'sweep_optimized_cfg.yaml')
 	if (not os.path.isfile(cfg_abs_path)):
-		cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, env_device, algo, 'cfg.yaml')
-	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, env_device)
+		cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, device_dir, algo, 'cfg.yaml')
+	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, device_dir)
 
 	compute_decomposition_policies(config_file_path=cfg_abs_path, algorithm=algo, save_dir=save_dir, run=run_id, env_device=env_device, save_model=save_model)
 
