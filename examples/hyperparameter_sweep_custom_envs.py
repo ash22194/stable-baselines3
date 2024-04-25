@@ -163,7 +163,7 @@ def initialize_model(cfg: Dict, save_dir: str, env_device: str):
 	if ('algorithm_kwargs' not in algorithm_args.keys()):
 		algorithm_args['algorithm_kwargs'] = dict()
 	if (env_device=='cuda'):
-		algorithm_args['algorithm_kwargs']['device'] = 'cuda'
+		algorithm_args['algorithm_kwargs']['device'] = env_device
 
 	if ('activation_fn' in policy_args['policy_kwargs'].keys()):
 		if (policy_args['policy_kwargs']['activation_fn'] == 'relu'):

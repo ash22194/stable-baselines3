@@ -68,7 +68,7 @@ def parse_common_args(cfg: dict, env_device: str = 'cpu'):
 	if ('algorithm_kwargs' not in algorithm_args.keys()):
 		algorithm_args['algorithm_kwargs'] = dict()
 	if (env_device=='cuda'):
-		algorithm_args['algorithm_kwargs']['device'] = 'cuda'
+		algorithm_args['algorithm_kwargs']['device'] = env_device
 	# check batch size
 	batch_size = algorithm_args['algorithm_kwargs'].get('batch_size', None)
 	if (batch_size is None):
