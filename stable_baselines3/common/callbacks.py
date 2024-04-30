@@ -747,7 +747,7 @@ class CustomEvalCallback(EventCallback):
 		episode_lengths = []
 
 		for ep in range(self.n_eval_episodes):
-			obs, _ = self.eval_env.reset()
+			obs, _ = self.eval_env.reset(state=self.fixed_starts[ep])
 			done = th.zeros(obs.shape[0], dtype=th.bool, device=self.eval_env.device)
 			discount = th.ones(obs.shape[0], device=self.eval_env.device)
 			ep_reward = th.zeros(obs.shape[0], device=self.eval_env.device)
