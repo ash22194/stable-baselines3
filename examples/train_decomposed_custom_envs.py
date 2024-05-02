@@ -8,7 +8,7 @@ from shutil import copyfile
 from ruamel.yaml import YAML
 import cProfile
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
-from ipdb import set_trace
+
 import gymnasium as gym
 import numpy as np
 from typing import Callable, Dict
@@ -256,7 +256,6 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 				assert ifw_pn.shape[0] == 1, 'frozen policy_net weights not found or multiple copies found'
 				ifw_pn = ifw_pn[0]
 				for iw, ww in enumerate(node_weights['policy_net'][imma]):
-					# set_trace()
 					weights_load_dict['mlp_extractor.policy_net.%d.'%imma + ww[0]] = frozen_weights['policy_net'][ifw_pn][1][iw][1]
 
 				ifw_an = np.nonzero([np.all(np.any(np.array(mma[0])[:,np.newaxis]==fw[0], axis=0)) for fw in frozen_weights['action_net']])[0]
@@ -320,8 +319,7 @@ def compute_decomposition_policies(config_file_path: str, algorithm: str, save_d
 		algorithm_args['name'] = algorithm
 	policy_args = cfg['policy']
 	net_arch = policy_args['policy_kwargs']['net_arch']
-	# set_trace()
-	assert ('pi' in net_arch.keys()) and ('vf' in net_arch.keys()), 'net_arch must be a dict with entries pi and vf for policy and value function architectures'
+	assert ('pi' in net_arch.keys()), 'net_arch must be a dict with entries pi for policy and optionally vf for value function architectures'
 	net_arch['pi'] = [[np.sort(mm[0]).tolist(), mm[1]] for mm in net_arch['pi']]
 
 	decomposition = parse_decomposition_args(cfg['decomposition'])
@@ -373,7 +371,7 @@ def compute_decomposition_policies(config_file_path: str, algorithm: str, save_d
 
 		# modify the environment args
 		node_environment_args = deepcopy(environment_args)
-		# set_trace()
+
 		environment_params = node_environment_args['environment_kwargs'].get('param', dict())
 		environment_params['U_DIMS_FREE'] = active_inputs
 		environment_params['U_DIMS_CONTROLLED'] = frozen_inputs
@@ -388,6 +386,10 @@ def compute_decomposition_policies(config_file_path: str, algorithm: str, save_d
 		# modify the policy args
 		node_policy_args = deepcopy(policy_args)
 		node_net_arch = []
+		node_vf_arch = [[], []]
+		if (active_inputs.shape[0]==0):
+			node_vf_arch[0] = ['all']
+
 		frozen_weights = dict()
 		frozen_weights['policy_net'] = []
 		frozen_weights['action_net'] = []
@@ -399,7 +401,12 @@ def compute_decomposition_policies(config_file_path: str, algorithm: str, save_d
 			is_mm_active = np.any(active_inputs[:,np.newaxis]==mm_inputs, axis=0)
 			if np.any(is_mm_active):
 				assert np.all(is_mm_active), 'not all actions in the module are active'
-				node_net_arch += [[mma[0], np.nonzero(mm_states)[0].tolist(), mma[1], 'a'] for mma in mm_archs]
+				node_vf_arch[0] += np.nonzero(mm_states)[0].tolist()
+				for mma in mm_archs:
+					node_net_arch += [[mma[0], np.nonzero(mm_states)[0].tolist(), mma[1], 'a']]
+					node_vf_arch[1] = [ll + node_vf_arch[1][il] for il, ll in enumerate(mma[1]) if il < len(node_vf_arch[1])]
+					node_vf_arch[1] += mma[1][len(node_vf_arch[1]):]
+
 			# frozen inputs for which policies are pre-trained
 			is_mm_frozen = np.any(frozen_inputs[:,np.newaxis]==mm_inputs, axis=0)
 			if np.any(is_mm_frozen):
@@ -413,7 +420,11 @@ def compute_decomposition_policies(config_file_path: str, algorithm: str, save_d
 			if np.any(is_mm_constant):
 				assert np.all(is_mm_constant), 'not all actions in the module are constant'
 				node_net_arch += [[mma[0], np.nonzero(mm_states)[0].tolist(), [], 'c'] for mma in mm_archs]
-		node_policy_args['policy_kwargs']['net_arch'] = dict(pi=node_net_arch, vf=net_arch['vf'])
+		if ('vf' in net_arch.keys()):
+			node_policy_args['policy_kwargs']['net_arch'] = dict(pi=node_net_arch, vf=net_arch['vf'])
+		else:
+			node_vf_arch[0] = np.unique(node_vf_arch[0]).tolist()
+			node_policy_args['policy_kwargs']['net_arch'] = dict(pi=node_net_arch, vf=node_vf_arch)
 
 		# where to log trained subpolicy computation?
 		if (active_inputs.shape[0] > 0):
@@ -504,7 +515,7 @@ def compute_decomposition_policies(config_file_path: str, algorithm: str, save_d
 		parent_children = input_tree[inode_parent][1]['children']
 		# remove the current node from the parent_children list and add subpolicy weights
 		inode_parent_children = np.nonzero([np.all(np.any(pc[:,np.newaxis]==active_inputs, axis=1)) for pc in parent_children])[0]
-		# set_trace()
+
 		assert inode_parent_children.shape[0]==1, 'current node must correspond to a single child in the parent node'
 
 		parent_children.pop(inode_parent_children[0])
@@ -517,7 +528,7 @@ def compute_decomposition_policies(config_file_path: str, algorithm: str, save_d
 		input_tree[inode_parent][1]['sub_policies'] = inode_parent_subpolicies
 
 		trained_weights = model.policy.get_weights()
-		# set_trace()
+
 		input_tree[inode][1]['weights'] = dict() # save weights corresponding to the active module
 		input_tree[inode][1]['weights']['policy_net'] = []
 		input_tree[inode][1]['weights']['action_net'] = []

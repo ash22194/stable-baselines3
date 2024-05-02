@@ -292,14 +292,28 @@ class DecompositionActionMlpExtractor(nn.Module):
         self.module_action_map = self.module_action_map.tolist()
 
         # Value network
+        net_arch_vf = net_arch['vf']
         last_layer_dim_vf = feature_dim
+        if (type(net_arch_vf[0])==list):
+            selection_layer_vf = th.eye(feature_dim, device=device)
+            if (not (net_arch_vf[0][0]=='all')):
+                selection_layer_vf = selection_layer_vf[:,net_arch_vf[0]]
+                last_layer_dim_vf = len(net_arch_vf[0])
+            net_arch_vf = net_arch_vf[1]
+        elif (type(net_arch_vf[0])==int):
+            selection_layer_vf = th.eye(feature_dim, device=device)
+        else:
+            NotImplementedError
+
         value_net = []
-        for curr_layer_dim_vf in net_arch['vf']:
+        for curr_layer_dim_vf in net_arch_vf:
             value_net.append(nn.Linear(last_layer_dim_vf, curr_layer_dim_vf))
             value_net.append(activation_fn())
             last_layer_dim_vf = curr_layer_dim_vf
-        self.latent_dim_vf = last_layer_dim_vf
+
         self.value_net = nn.Sequential(*value_net).to(device)
+        self.selection_net_vf = nn.parameter.Parameter(selection_layer_vf, requires_grad=False)
+        self.latent_dim_vf = last_layer_dim_vf
     
     def forward(self, features: th.Tensor) -> Tuple[th.Tensor, th.Tensor]:
         """
@@ -312,7 +326,7 @@ class DecompositionActionMlpExtractor(nn.Module):
         return [pn(features @ sn) for pn, sn in zip(self.policy_net, self.selection_net)]
 
     def forward_critic(self, features: th.Tensor) -> th.Tensor:
-        return self.value_net(features)
+        return self.value_net(features @ self.selection_net_vf)
 
 
 class ModularActionMlpExtractor(nn.Module):

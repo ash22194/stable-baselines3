@@ -949,7 +949,10 @@ class DecompositionActorCriticPolicy(BasePolicy):
                 if (pn[3]=='a'):
                     module_gains[self.mlp_extractor.policy_net[ipn]] = np.sqrt(2)
                     module_gains[self.action_net[ipn]] = 0.01
-                else:
+                elif (pn[3]=='f'):
+                    module_gains[self.mlp_extractor.policy_net[ipn]] = 0.0
+                    module_gains[self.action_net[ipn]] = 0.0
+                elif (pn[3]=='c'):
                     module_gains[self.action_net[ipn]] = 0.0
 
             if not self.share_features_extractor:

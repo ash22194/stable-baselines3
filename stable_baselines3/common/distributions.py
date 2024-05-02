@@ -133,7 +133,7 @@ class DiagGaussianDistribution(Distribution):
     def __init__(self, action_dim: int, fixed_dims=None):
         super().__init__()
         self.action_dim = action_dim
-        
+
         self.mask = th.ones(action_dim)
         self.offset = th.zeros(action_dim)
         if (type(fixed_dims)==list):
@@ -193,10 +193,10 @@ class DiagGaussianDistribution(Distribution):
         :return:
         """
         log_prob = self.distribution.log_prob(actions)
-        return sum_independent_dims(log_prob)
+        return sum_independent_dims(log_prob * self.mask)
 
     def entropy(self) -> th.Tensor:
-        return sum_independent_dims(self.distribution.entropy())
+        return sum_independent_dims((self.distribution.entropy() * self.mask))
 
     def sample(self) -> th.Tensor:
         # Reparametrization trick to pass gradients
@@ -730,4 +730,7 @@ def kl_divergence(dist_true: Distribution, dist_pred: Distribution) -> th.Tensor
 
     # Use the PyTorch kl_divergence implementation
     else:
-        return th.distributions.kl_divergence(dist_true.distribution, dist_pred.distribution)
+        if (hasattr(dist_true, 'mask')):
+            return (th.distributions.kl_divergence(dist_true.distribution, dist_pred.distribution) * dist_true.mask)
+        else:
+            return th.distributions.kl_divergence(dist_true.distribution, dist_pred.distribution)
