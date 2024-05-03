@@ -277,7 +277,7 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 	# )
 
 	stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=node_algorithm_args.get('max_no_improvement_evals', 5), min_evals=node_algorithm_args.get('min_evals', 5), verbose=1)
-	callback = CustomEvalCallback(eval_env, eval_freq=int(save_every_timestep/num_envs), n_eval_episodes=n_eval_episodes, log_path=logger.get_dir(), callback_after_eval=stop_train_callback, verbose=1, save_model=save_model)
+	callback = CustomEvalCallback(eval_env, eval_freq=int(save_every_timestep/num_envs), n_eval_episodes=n_eval_episodes, log_path=logger.get_dir(), callback_after_eval=stop_train_callback, verbose=1, save_model=save_model, cleanup=True)
 
 	return model, callback
 

@@ -550,7 +550,8 @@ class CustomEvalCallback(EventCallback):
 		verbose: int = 1,
 		warn: bool = True,
 		fixed_starts = True,
-		save_model = False
+		save_model = False,
+		cleanup = False
 	):
 		super().__init__(callback_after_eval, verbose=verbose)
 
@@ -567,6 +568,7 @@ class CustomEvalCallback(EventCallback):
 		self.render = render
 		self.warn = warn
 		self.save_model = save_model
+		self.cleanup = cleanup
 		self.curr_check_point_id = 0
 
 		self.eval_env = eval_env
@@ -725,6 +727,7 @@ class CustomEvalCallback(EventCallback):
 			self.logger.dump(self.num_timesteps)
 
 			if mean_reward > self.best_mean_reward:
+				self.best_timestep = self.num_timesteps
 				if self.verbose >= 1:
 					print("New best mean reward!")
 				if self.best_model_save_path is not None:
@@ -804,6 +807,15 @@ class CustomEvalCallback(EventCallback):
 			episode_lengths.append(ep_length)
 
 		return episode_discounted_rewards, episode_lengths
+	
+	def _cleanup(self):
+		if (self.cleanup):
+			# delete models saved after the best found model
+			for ff in os.listdir(self.log_path):
+				if ('model' in ff):
+					save_id = int(os.path.splitext(ff)[0].split('_')[-1])
+					if (save_id > self.best_timestep):
+						os.remove(os.path.join(self.log_path, ff))
 	
 	def update_child_locals(self, locals_: Dict[str, Any]) -> None:
 		"""
@@ -944,6 +956,8 @@ class StopTrainingOnNoModelImprovement(BaseCallback):
 			else:
 				self.no_improvement_evals += 1
 				if self.no_improvement_evals > self.max_no_improvement_evals:
+					if (hasattr(self.parent, '_cleanup')):
+						self.parent._cleanup()
 					continue_training = False
 
 		self.last_best_mean_reward = self.parent.best_mean_reward
