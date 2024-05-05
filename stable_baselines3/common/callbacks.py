@@ -758,6 +758,7 @@ class CustomEvalCallback(EventCallback):
 			ep_length = th.zeros(obs.shape[0], device=self.eval_env.device)
 
 			while (not th.all(done)):
+				# not using model.predict() here because it typecasts actions to cpu and numpy by default!
 				with th.no_grad():
 					action, _, _ = self.model.policy.forward(obs, deterministic=self.deterministic)
 				# clip action for consistency with bounds
@@ -776,7 +777,8 @@ class CustomEvalCallback(EventCallback):
 			episode_discounted_rewards.append(ep_discounted_reward.clone().cpu().numpy())
 			episode_lengths.append(ep_length.clone().cpu().numpy())
 
-		return np.concatenate(episode_discounted_rewards).tolist(), np.concatenate(episode_lengths).tolist()
+		# return np.concatenate(episode_discounted_rewards).tolist(), np.concatenate(episode_lengths).tolist()
+		return np.concatenate(episode_rewards).tolist(), np.concatenate(episode_lengths).tolist()
 
 	def _evaluate_policy(self):
 
@@ -806,7 +808,8 @@ class CustomEvalCallback(EventCallback):
 			episode_discounted_rewards.append(ep_discounted_reward)
 			episode_lengths.append(ep_length)
 
-		return episode_discounted_rewards, episode_lengths
+		# return episode_discounted_rewards, episode_lengths
+		return episode_rewards, episode_lengths
 	
 	def _cleanup(self):
 		if (self.cleanup):
@@ -816,6 +819,10 @@ class CustomEvalCallback(EventCallback):
 					save_id = int(os.path.splitext(ff)[0].split('_')[-1])
 					if (save_id > self.best_timestep):
 						os.remove(os.path.join(self.log_path, ff))
+			# set the model parameters to best performing model saved
+			best_model_filepath = os.path.join(self.log_path, 'model_' + str(self.best_timestep) + '.zip')
+			assert os.path.isfile(best_model_filepath), 'cannot find the best model savefile'
+			self.model.set_parameters(best_model_filepath)
 	
 	def update_child_locals(self, locals_: Dict[str, Any]) -> None:
 		"""
