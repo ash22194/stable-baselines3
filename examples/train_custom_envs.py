@@ -14,7 +14,7 @@ from typing import Callable, Dict
 from stable_baselines3.gpu_systems import GPUQuadcopter, GPUQuadcopterTT, GPUUnicycle
 
 from stable_baselines3 import A2CwReg, PPO, TD3
-from stable_baselines3.common.callbacks import BaseCallback, CustomSaveLogCallback
+from stable_baselines3.common.callbacks import BaseCallback, CustomSaveLogCallback, CustomEvalCallback
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize, GPUVecEnv

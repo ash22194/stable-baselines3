@@ -671,10 +671,10 @@ class CustomEvalCallback(EventCallback):
 			self._is_success_buffer = []
 			try:
 				if (self.eval_env.spec.id in gym.registry.keys()):
-					episode_rewards, episode_lengths = self._evaluate_policy()
+					episode_rewards, episode_discounted_rewards, episode_lengths, episode_final_goal_dist = self._evaluate_policy()
 			except AttributeError:
 				# if not a gym env then a gpu env
-				episode_rewards, episode_lengths = self._evaluate_policy_customgpuenv()
+				episode_rewards, episode_discounted_rewards, episode_lengths, episode_final_goal_dist = self._evaluate_policy_customgpuenv()
 
 			if self.log_path is not None:
 				assert isinstance(episode_rewards, list)
@@ -707,6 +707,7 @@ class CustomEvalCallback(EventCallback):
 
 			mean_reward, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
 			mean_ep_length, std_ep_length = np.mean(episode_lengths), np.std(episode_lengths)
+			mean_final_goal_dist, std_final_goal_dist = np.mean(episode_final_goal_dist), np.std(episode_final_goal_dist)
 			self.last_mean_reward = float(mean_reward)
 
 			if self.verbose >= 1:
@@ -715,6 +716,7 @@ class CustomEvalCallback(EventCallback):
 			# Add to current Logger
 			self.logger.record("eval/mean_reward", float(mean_reward))
 			self.logger.record("eval/mean_ep_length", mean_ep_length)
+			self.logger.record("eval/mean_final_goal_dist", mean_final_goal_dist)
 
 			if len(self._is_success_buffer) > 0:
 				success_rate = np.mean(self._is_success_buffer)
@@ -748,6 +750,7 @@ class CustomEvalCallback(EventCallback):
 		episode_rewards = []
 		episode_discounted_rewards = []
 		episode_lengths = []
+		episode_final_goal_dist = []
 
 		for ep in range(self.n_eval_episodes):
 			obs, _ = self.eval_env.reset(state=self.fixed_starts[ep])
@@ -776,15 +779,19 @@ class CustomEvalCallback(EventCallback):
 			episode_rewards.append(ep_reward.clone().cpu().numpy())
 			episode_discounted_rewards.append(ep_discounted_reward.clone().cpu().numpy())
 			episode_lengths.append(ep_length.clone().cpu().numpy())
+			if (hasattr(self.eval_env, 'get_goal_dist')):
+				episode_final_goal_dist.append(self.eval_env.get_goal_dist().cpu().numpy())
+			else:
+				episode_final_goal_dist.append(np.zeros(obs.shape[0]))
 
-		# return np.concatenate(episode_discounted_rewards).tolist(), np.concatenate(episode_lengths).tolist()
-		return np.concatenate(episode_rewards).tolist(), np.concatenate(episode_lengths).tolist()
+		return np.concatenate(episode_rewards).tolist(), np.concatenate(episode_discounted_rewards).tolist(), np.concatenate(episode_lengths).tolist(), np.concatenate(episode_final_goal_dist).tolist()
 
 	def _evaluate_policy(self):
 
 		episode_rewards = []
 		episode_discounted_rewards = []
 		episode_lengths = []
+		episode_final_goal_dist = []
 
 		for ep in range(self.n_eval_episodes):
 			obs, _ = self.eval_env.reset(state=self.fixed_starts[ep])
@@ -807,9 +814,11 @@ class CustomEvalCallback(EventCallback):
 			episode_rewards.append(ep_reward)
 			episode_discounted_rewards.append(ep_discounted_reward)
 			episode_lengths.append(ep_length)
+			episode_final_goal_dist.append(0)
+			if (hasattr(self.eval_env, 'get_goal_dist')):
+				episode_final_goal_dist[-1] = self.eval_env.get_goal_dist()
 
-		# return episode_discounted_rewards, episode_lengths
-		return episode_rewards, episode_lengths
+		return episode_rewards, episode_discounted_rewards, episode_lengths, episode_final_goal_dist
 	
 	def _cleanup(self):
 		if (self.cleanup):
