@@ -47,6 +47,21 @@ class PytorchProfilerStepCallback(BaseCallback):
 		pass
 
 
+def get_gpu_env(env_name: str, env_device: str, env_kwargs: Dict = dict()):
+
+	if (env_name=='GPUQuadcopter'):
+		env = GPUQuadcopter(device=env_device, **env_kwargs)
+	elif (env_name=='GPUQuadcopterTT'):
+		env = GPUQuadcopterTT(device=env_device, **env_kwargs)
+	elif (env_name=='GPUQuadcopterDecomposition'):
+		env = GPUQuadcopterDecomposition(device=env_device, **env_kwargs)
+	elif (env_name=='GPUUnicycle'):
+		env = GPUUnicycle(device=env_device, **env_kwargs)
+	else:
+		env = None
+	return env
+
+
 def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: int = None, env_device: str = 'cpu'):
 	
 	algorithm = algorithm.upper()
@@ -103,14 +118,7 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 	# initialize the environment
 	num_envs = environment_args.get('num_envs')
 	if ((env_device=='cuda') or (env_device=='mps')):
-		if (environment_args.get('name')=='GPUQuadcopter'):
-			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
-		elif (environment_args.get('name')=='GPUQuadcopterTT'):
-			env = GPUQuadcopterTT(device=env_device, **(environment_args.get('environment_kwargs', dict())))
-		elif (environment_args.get('name')=='GPUUnicycle'):
-			env = GPUUnicycle(device=env_device, **(environment_args.get('environment_kwargs', dict())))
-		else:
-			NotImplementedError
+		env = get_gpu_env(environment_args.get('name'), env_device, environment_args.get('environment_kwargs', dict()))
 		env = GPUVecEnv(env, num_envs=num_envs)
 	else:
 		normalized_rewards = environment_args.get('normalized_rewards')
@@ -201,7 +209,27 @@ def initialize_model(config_file_path: str, algorithm: str, save_dir: str, run: 
 	save_every_timestep = algorithm_args.get('save_every_timestep')
 	if (save_every_timestep is None):
 		save_every_timestep = algorithm_args.get('total_timesteps')
-	callback = CustomSaveLogCallback(save_every_timestep=save_every_timestep, save_path=logger.get_dir(), save_prefix=policy_args.get('save_prefix'))
+	# callback = CustomSaveLogCallback(
+	# 	save_every_timestep=save_every_timestep, 
+	# 	save_path=logger.get_dir(), 
+	# 	save_prefix=policy_args.get('save_prefix')
+	# )
+
+	n_eval_episodes = algorithm_args.get('n_eval_episodes', 100)
+	eval_envname = environment_args['name']
+	eval_env_kwargs = environment_args.get('environment_kwargs', dict())
+	if (eval_env_kwargs.get('intermittent_starts', None) is not None):
+		eval_env_kwargs['intermittent_starts'] = False
+	if (env_device=='cuda') or (env_device=='mps'):
+		eval_env = get_gpu_env(eval_envname, env_device, eval_env_kwargs)
+		eval_env.set_num_envs(n_eval_episodes)
+		n_eval_episodes = 1
+	else:
+		eval_env = gym.make(eval_envname, **eval_env_kwargs)
+
+	# stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=algorithm_args.get('max_no_improvement_evals', 5), min_evals=algorithm_args.get('min_evals', 5), verbose=1)
+	stop_train_callback = None
+	callback = CustomEvalCallback(eval_env, eval_freq=int(save_every_timestep/num_envs), n_eval_episodes=n_eval_episodes, log_path=logger.get_dir(), callback_after_eval=stop_train_callback, verbose=1, save_model=True, cleanup=True)
 
 	return model, callback, cfg
 

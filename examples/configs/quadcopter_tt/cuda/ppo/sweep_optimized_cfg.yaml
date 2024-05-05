@@ -12,6 +12,7 @@ environment:
     reference_trajectory_horizon: 0.0625
     normalized_actions: true
     normalized_observations: true
+    intermittent_starts: true
     alpha_cost: 5.693
     alpha_action_cost: 5.693
     alpha_terminal_cost: 0.3166
