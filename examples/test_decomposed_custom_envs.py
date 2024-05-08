@@ -20,42 +20,24 @@ from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.callbacks import BaseCallback, CustomSaveLogCallback, CustomEvalCallback, StopTrainingOnNoModelImprovement
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize, GPUVecEnv
 from stable_baselines3.common.learning_schedules import linear_schedule, decay_sawtooth_schedule, exponential_schedule
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.utils import get_latest_run_id
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
 
 
-def initialize_environment(environment_args, env_device: str= 'cpu'):
+def get_gpu_env(env_name: str, env_device: str, env_kwargs: Dict = dict()):
 
-	num_envs = environment_args.get('num_envs')
-	if (env_device=='cuda'):
-		if (environment_args.get('name')=='GPUQuadcopter'):
-			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
-		elif (environment_args.get('name')=='GPUQuadcopterTT'):
-			env = GPUQuadcopterTT(device=env_device, **(environment_args.get('environment_kwargs', dict())))
-		elif (environment_args.get('name')=='GPUUnicycle'):
-			env = GPUUnicycle(device=env_device, **(environment_args.get('environment_kwargs', dict())))
-		else:
-			NotImplementedError
-		env = GPUVecEnv(env, num_envs=num_envs)
+	if (env_name=='GPUQuadcopter'):
+		env = GPUQuadcopter(device=env_device, **env_kwargs)
+	elif (env_name=='GPUQuadcopterTT'):
+		env = GPUQuadcopterTT(device=env_device, **env_kwargs)
+	elif (env_name=='GPUQuadcopterDecomposition'):
+		env = GPUQuadcopterDecomposition(device=env_device, **env_kwargs)
+	elif (env_name=='GPUUnicycle'):
+		env = GPUUnicycle(device=env_device, **env_kwargs)
 	else:
-		normalized_rewards = environment_args.get('normalized_rewards')
-		env = make_vec_env(
-			environment_args.get('name'), n_envs=num_envs, 
-			env_kwargs=environment_args.get('environment_kwargs', dict()),
-			vec_env_cls=DummyVecEnv
-		)
-		if (normalized_rewards):
-			env = VecNormalize(
-				env,
-				norm_obs=False, # Batch normalization
-				norm_reward=True,
-				training=True,
-				gamma=algorithm_args['algorithm_kwargs'].get('gamma', 0.99)
-			)
-
+		env = None
 	return env
 
 
@@ -230,22 +212,33 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 	environment_params['X_DIMS_FREE'] = np.nonzero(independent_states)[0]
 	environment_params['X_DIMS_FIXED'] = np.array([], dtype=np.int32)
 	environment_args['environment_kwargs']['param'] = environment_params
-	if (env_device=='cpu'):
-		env = gym.make(environment_args['name'], **environment_args['environment_kwargs'])
-	else:
-		NotImplementedError
+
+	env = get_gpu_env(environment_args['name'])
+	is_gpu_env = True
+	if (env is None):
+		env = gym.make(environment_args.get('eval_envname', environment_args['name']), **environment_args['environment_kwargs'])
+		is_gpu_env = False
 
 	# load starts if test_starts exist else sample and save
 	if (os.path.isfile(test_starts) and (os.path.splitext(test_starts)[-1]=='.npy')):
 		starts = np.load(test_starts, allow_pickle=False, mmap_mode=None)
+		if (is_gpu_env):
+			env.set_num_envs(starts.shape[0])
 	else:
 		num_starts = 100
-		starts = []
-		for nn in range(num_starts):
+		if (is_gpu_env):
+			env.set_num_envs(num_starts)
+			num_starts = 1
 			env.reset()
-			starts += [env.state.copy()]
-		starts = np.array(starts)
-		np.save(os.path.join(load_dir, 'test_starts.npy'), starts, allow_pickle=False)
+			starts = env.state
+			np.save(os.path.join(load_dir, 'test_starts.npy'), starts.cpu().numpy(), allow_pickle=False)
+		else:
+			starts = []
+			for nn in range(num_starts):
+				env.reset()
+				starts += [env.state.copy()]
+			starts = np.array(starts)
+			np.save(os.path.join(load_dir, 'test_starts.npy'), starts, allow_pickle=False)
 
 	algorithm_args = cfg['algorithm']
 	if (algorithm_args['name'] == 'PPO'):
@@ -298,6 +291,10 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 
 			# subpolicy architecture
 			node_net_arch = []
+			node_vf_arch = [[], []]
+			if (active_inputs.shape[0]==0):
+				node_vf_arch[0] = ['all']
+
 			frozen_weights = dict()
 			frozen_weights['policy_net'] = []
 			frozen_weights['action_net'] = []
@@ -309,7 +306,12 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 				is_mm_active = np.any(active_inputs[:,np.newaxis]==mm_inputs, axis=0)
 				if np.any(is_mm_active):
 					assert np.all(is_mm_active), 'not all actions in the module are active'
-					node_net_arch += [[mma[0], np.nonzero(mm_states)[0].tolist(), mma[1], 'a'] for mma in mm_archs]
+					node_vf_arch[0] += np.nonzero(mm_states)[0].tolist()
+					for mma in mm_archs:
+						node_net_arch += [[mma[0], np.nonzero(mm_states)[0].tolist(), mma[1], 'a']]
+						node_vf_arch[1] = [ll + node_vf_arch[1][il] for il, ll in enumerate(mma[1]) if il < len(node_vf_arch[1])]
+						node_vf_arch[1] += mma[1][len(node_vf_arch[1]):]
+
 				# frozen inputs for which policies are pre-trained
 				is_mm_frozen = np.any(frozen_inputs[:,np.newaxis]==mm_inputs, axis=0)
 				if np.any(is_mm_frozen):
@@ -323,6 +325,10 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 				if np.any(is_mm_constant):
 					assert np.all(is_mm_constant), 'not all actions in the module are constant'
 					node_net_arch += [[mma[0], np.nonzero(mm_states)[0].tolist(), [], 'c'] for mma in mm_archs]
+			if ('vf' in net_arch.keys()):
+				node_vf_arch = net_arch['vf']
+			else:
+				node_vf_arch[0] = np.unique(node_vf_arch[0]).tolist()
 
 			if (active_inputs.shape[0] > 0):
 				subpolicy_load_dir = os.path.join(load_dir, 'U'+''.join(str(e) for e in active_inputs.tolist())+'_X'+''.join(str(e) for e in np.nonzero(node[1]['state'])[0].tolist()), 'evaluations')
@@ -366,7 +372,7 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 			else:
 				previous_load_iter = current_load_iter
 				current_load_iter = next_load_iter
-				policy_args['policy_kwargs']['net_arch'] = dict(pi=node_net_arch, vf=net_arch['vf'])
+				policy_args['policy_kwargs']['net_arch'] = dict(pi=node_net_arch, vf=node_vf_arch)
 				# create the model
 				model = algorithm('DecompositionMlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 
@@ -390,7 +396,10 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 
 				# evaluate model
 				print('checkpoint : %d'%current_load_iter)
-				episode_rewards, episode_discounted_rewards, final_errors = evaluate_policy(env, model, starts)
+				if (is_gpu_env):
+					episode_rewards, episode_discounted_rewards, final_errors = evaluate_policy_customgpuenv(env, model, starts)
+				else:
+					episode_rewards, episode_discounted_rewards, final_errors = evaluate_policy(env, model, starts)
 
 				mean_rewards += [np.mean(episode_rewards)]
 				mean_discounted_rewards += [np.mean(episode_discounted_rewards)]
@@ -399,6 +408,39 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 				cummulative_steps = 0
 	
 	return mean_rewards, mean_discounted_rewards, mean_final_errors, checkpoint_steps
+
+
+def evaluate_policy_customgpuenv(test_env, model, starts, verbose=False):
+
+	episode_rewards = 0
+	episode_discounted_rewards = 0
+
+	obs, _ = test_env.reset(state=starts)
+	done = th.zeros(obs.shape[0], dtype=th.bool, device=test_env.device)
+	discount = th.ones(obs.shape[0], device=test_env.device)
+	while (not th.all(done)):
+		with th.no_grad():
+			action, _, _ = model.policy.forward(obs, deterministic=True)
+		# clip action for consistency with bounds
+		action = th.clip(action, test_env.th_action_space_low, test_env.th_action_space_high)
+
+		obs, reward, done_, _, info = test_env.step(action)
+		not_done = th.logical_not(done)
+		done = done_
+		reward = reward * not_done # add terminal value estimate -> if expecting episodes to be of different lengths?
+
+		episode_rewards += reward
+		episode_discounted_rewards += (discount*reward)
+		discount *= model.gamma
+
+	final_errors = test_env.get_goal_dist()
+
+	if (verbose):
+		with np.printoptions(precision=3, suppress=True):
+			print('reward (discounted) : %f (%f)' %(th.nanmean(episode_rewards).cpu().numpy(), th.nanmean(episode_discounted_rewards).cpu().numpy()))
+			print('final error : %f' %th.nanmean(final_errors).cpu().numpy())
+
+	return episode_rewards.cpu().numpy(), episode_discounted_rewards.cpu().numpy(), final_errors.cpu().numpy()
 
 
 def evaluate_policy(test_env, model, starts, verbose=False):

@@ -90,12 +90,26 @@ class BaseCallback(ABC):
 	def _on_rollout_start(self) -> None:
 		pass
 
+	def _before_step(self) -> None:
+		# the locals() call happens after the step, so assume no access to local variables here
+		pass
+
 	@abstractmethod
 	def _on_step(self) -> bool:
 		"""
 		:return: If the callback returns False, training is aborted early.
 		"""
 		return True
+
+	def _after_step(self) -> None:
+		pass
+
+	def before_step(self) -> None:
+		"""
+		This method will be called before stepping the environment
+		no updated local variables available, can be used for timing calls
+		"""
+		self._before_step()
 
 	def on_step(self) -> bool:
 		"""
@@ -110,6 +124,13 @@ class BaseCallback(ABC):
 		self.num_timesteps = self.model.num_timesteps
 
 		return self._on_step()
+
+	def after_step(self) -> None:
+		"""
+		This method will be called at the end of the rollout loop
+		no updated local variables available, can be used for timing calls
+		"""
+		self._after_step()
 
 	def on_training_end(self) -> None:
 		self._on_training_end()
@@ -543,6 +564,7 @@ class CustomEvalCallback(EventCallback):
 		callback_after_eval: Optional[BaseCallback] = None,
 		n_eval_episodes: int = 5,
 		eval_freq: int = 10000,
+		eval_offline: bool = True,
 		log_path: Optional[str] = None,
 		best_model_save_path: Optional[str] = None,
 		deterministic: bool = True,
@@ -551,7 +573,8 @@ class CustomEvalCallback(EventCallback):
 		warn: bool = True,
 		fixed_starts = True,
 		save_model = False,
-		cleanup = False
+		cleanup = False,
+		time_run = None
 	):
 		super().__init__(callback_after_eval, verbose=verbose)
 
@@ -562,6 +585,7 @@ class CustomEvalCallback(EventCallback):
 
 		self.n_eval_episodes = n_eval_episodes
 		self.eval_freq = eval_freq
+		self.eval_offline = eval_offline
 		self.best_mean_reward = -np.inf
 		self.last_mean_reward = -np.inf
 		self.deterministic = deterministic
@@ -570,6 +594,32 @@ class CustomEvalCallback(EventCallback):
 		self.save_model = save_model
 		self.cleanup = cleanup
 		self.curr_check_point_id = 0
+		self.time_run = time_run
+		if (time_run=='cuda'):
+			# in milli-seconds
+			self.time_rollout = 0.
+			self.time_step = 0.
+			self.time_buffer = 0.
+			self.time_eval = 0.
+			self.time_train_loop = 0.
+
+			# define events
+			self.rollout_start = th.cuda.Event(enable_timing=True)
+			self.step_start = th.cuda.Event(enable_timing=True)
+			self.buffer_start = th.cuda.Event(enable_timing=True)
+			self.eval_start = th.cuda.Event(enable_timing=True)
+			self.train_loop_start = th.cuda.Event(enable_timing=True)
+			self.train_start = th.cuda.Event(enable_timing=True)
+
+			self.rollout_end = th.cuda.Event(enable_timing=True)
+			self.step_end = th.cuda.Event(enable_timing=True)
+			self.buffer_end = th.cuda.Event(enable_timing=True)
+			self.eval_end = th.cuda.Event(enable_timing=True)
+			self.train_loop_end = th.cuda.Event(enable_timing=True)
+			self.train_end = th.cuda.Event(enable_timing=True)
+
+		elif (time_run is not None):
+			NotImplementedError
 
 		self.eval_env = eval_env
 		self.best_model_save_path = best_model_save_path
@@ -643,7 +693,40 @@ class CustomEvalCallback(EventCallback):
 			if maybe_is_success is not None:
 				self._is_success_buffer.append(maybe_is_success)
 
-	def _on_step(self):
+	def _on_training_start(self) -> None:
+		# for timing measurements only
+		if (self.time_run=='cuda'):
+			th.cuda.synchronize()
+			self.train_start.record()
+
+			th.cuda.synchronize()
+			self.train_loop_start.record()
+
+	def _on_rollout_start(self) -> None:
+		# for timing measurements only
+		if (self.time_run=='cuda'):
+			th.cuda.synchronize()
+			self.train_loop_end.record()
+			th.cuda.synchronize()
+			self.time_train_loop += self.train_loop_start.elapsed_time(self.train_loop_end)
+			self.logger.record("time/train_loop", self.time_train_loop / 1000.)
+
+			th.cuda.synchronize()
+			self.rollout_start.record()
+
+	def _before_step(self) -> None:
+		# for timing measurements only
+		# the locals call happens after the step, so assume no access to local variables
+		if (self.time_run=='cuda'):
+			th.cuda.synchronize()
+			self.step_start.record()
+
+	def _on_step(self) -> None:
+		if (self.time_run=='cuda'):
+			th.cuda.synchronize()
+			self.step_end.record()
+			th.cuda.synchronize()
+			self.time_step += self.step_start.elapsed_time(self.step_end)
 
 		continue_training = True
 
@@ -654,6 +737,12 @@ class CustomEvalCallback(EventCallback):
 			for ts in terminal_statnames:
 				ts_stat = [terminal_infos[ii][ts] for ii in range(len(terminal_infos)) if (not np.isnan(terminal_infos[ii][ts]))]
 				self.logger.record("rollout/" + ts, np.mean(ts_stat))
+				if (ts == "ep_reward"):
+					self.episode_rewards = ts_stat
+				elif (ts == "ep_length"):
+					self.episode_lengths = ts_stat
+				elif (ts == "ep_terminal_goal_dist"):
+					self.episode_final_goal_dist = ts_stat
 
 		if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
 			# Sync training and eval env if there is VecNormalize
@@ -669,12 +758,27 @@ class CustomEvalCallback(EventCallback):
 
 			# Reset success rate buffer
 			self._is_success_buffer = []
-			try:
-				if (self.eval_env.spec.id in gym.registry.keys()):
-					episode_rewards, episode_discounted_rewards, episode_lengths, episode_final_goal_dist = self._evaluate_policy()
-			except AttributeError:
-				# if not a gym env then a gpu env
-				episode_rewards, episode_discounted_rewards, episode_lengths, episode_final_goal_dist = self._evaluate_policy_customgpuenv()
+			if (self.eval_offline):
+				try:
+					if (self.eval_env.spec.id in gym.registry.keys()):
+						episode_rewards, episode_discounted_rewards, episode_lengths, episode_final_goal_dist = self._evaluate_policy()
+				except AttributeError:
+					# if not a gym env then a gpu env
+					if (self.time_run=='cuda'):
+						th.cuda.synchronize()
+						self.eval_start.record()
+
+					episode_rewards, episode_discounted_rewards, episode_lengths, episode_final_goal_dist = self._evaluate_policy_customgpuenv()
+
+					if (self.time_run=='cuda'):
+						th.cuda.synchronize()
+						self.eval_end.record()
+						th.cuda.synchronize()
+						self.time_eval += self.eval_start.elapsed_time(self.eval_end)
+			else:
+				episode_rewards = self.episode_rewards if hasattr(self, 'episode_rewards') else [-np.inf]
+				episode_lengths = self.episode_lengths if hasattr(self, 'episode_lengths') else [-np.inf]
+				episode_final_goal_dist = self.episode_final_goal_dist if hasattr(self, 'episode_final_goal_dist') else [-np.inf]
 
 			if self.log_path is not None:
 				assert isinstance(episode_rewards, list)
@@ -743,8 +847,49 @@ class CustomEvalCallback(EventCallback):
 			if self.callback is not None:
 				continue_training = continue_training and self._on_event()
 
+		if (self.time_run=='cuda'):
+			th.cuda.synchronize()
+			self.buffer_start.record()
+
 		return continue_training
 	
+	def _after_step(self) -> None:
+		# for timing measurements only
+		if (self.time_run=='cuda'):
+			th.cuda.synchronize()
+			self.buffer_end.record()
+			th.cuda.synchronize()
+			self.time_buffer += self.buffer_start.elapsed_time(self.buffer_end)
+
+	def _on_rollout_end(self) -> None:
+		# for timing measurements only
+		if (self.time_run=='cuda'):
+			th.cuda.synchronize()
+			self.buffer_start.record() # hacky way to measure buffer advantage computation time
+			th.cuda.synchronize()
+			self.time_buffer += self.buffer_end.elapsed_time(self.buffer_start)
+
+			th.cuda.synchronize()
+			self.rollout_end.record()
+			th.cuda.synchronize()
+			self.time_rollout += self.rollout_start.elapsed_time(self.rollout_end)
+
+			th.cuda.synchronize()
+			self.train_loop_start.record()
+
+			self.logger.record("time/step", self.time_step / 1000.)
+			self.logger.record("time/eval", self.time_eval / 1000.)
+			self.logger.record("time/buffer_update", self.time_buffer / 1000.)
+			self.logger.record("time/rollout", self.time_rollout / 1000.)
+
+	def _on_training_end(self) -> None:
+		# for timing measurements only
+		if (self.time_run=='cuda'):
+			th.cuda.synchronize()
+			self.train_end.record()
+			th.cuda.synchronize()
+			self.logger.record("time/total", self.train_start.elapsed_time(self.train_end) / 1000.)
+
 	def _evaluate_policy_customgpuenv(self):
 
 		episode_rewards = []
@@ -954,10 +1099,15 @@ class StopTrainingOnNoModelImprovement(BaseCallback):
 
 	parent: EvalCallback
 
-	def __init__(self, max_no_improvement_evals: int, min_evals: int = 0, verbose: int = 0):
+	def __init__(self, max_no_improvement_evals: int, min_evals: int = 0, rel_improve_tol: float = 0, improve_tol: float = None, verbose: int = 0):
 		super().__init__(verbose=verbose)
 		self.max_no_improvement_evals = max_no_improvement_evals
 		self.min_evals = min_evals
+		self.rel_improve_tol = rel_improve_tol
+		if (improve_tol is None):
+			self.improve_tol = -np.inf
+		else:
+			self.improve_tol = improve_tol
 		self.last_best_mean_reward = -np.inf
 		self.no_improvement_evals = 0
 
@@ -967,7 +1117,7 @@ class StopTrainingOnNoModelImprovement(BaseCallback):
 		continue_training = True
 
 		if self.n_calls > self.min_evals:
-			if self.parent.best_mean_reward > self.last_best_mean_reward:
+			if self.parent.best_mean_reward > (self.last_best_mean_reward - self.improve_tol):
 				self.no_improvement_evals = 0
 			else:
 				self.no_improvement_evals += 1
@@ -977,6 +1127,9 @@ class StopTrainingOnNoModelImprovement(BaseCallback):
 					continue_training = False
 
 		self.last_best_mean_reward = self.parent.best_mean_reward
+		if ((np.isinf(self.improve_tol)) and (not np.isinf(self.last_best_mean_reward))):
+			# set tolerance to be a fraction of the initial best reward
+			self.improve_tol = self.last_best_mean_reward * self.rel_improve_tol
 
 		if self.verbose >= 1 and not continue_training:
 			print(
