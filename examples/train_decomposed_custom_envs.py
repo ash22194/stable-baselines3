@@ -181,7 +181,7 @@ def get_gpu_env(env_name: str, env_device: str, env_kwargs: Dict = dict()):
 		env = None
 	return env
 
-def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args: dict, node_policy_args: dict, subpolicy_save_dir: str, frozen_weights: dict, env_device: str = 'cpu', save_model: bool = False):
+def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args: dict, node_policy_args: dict, subpolicy_save_dir: str, frozen_weights: dict, env_device: str = 'cpu', save_model: bool = False, time_run: str = None):
 
 	# create environment
 	# update environment config
@@ -276,12 +276,12 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 	# 	# termination=dict(criteria='reward', threshold=0.025, repeat=10)
 	# )
 
-	stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=node_algorithm_args.get('max_no_improvement_evals', 5), min_evals=node_algorithm_args.get('min_evals', 5), verbose=1)
-	callback = CustomEvalCallback(eval_env, eval_freq=int(save_every_timestep/num_envs), n_eval_episodes=n_eval_episodes, log_path=logger.get_dir(), callback_after_eval=stop_train_callback, verbose=1, save_model=save_model, cleanup=True)
+	stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=node_algorithm_args.get('max_no_improvement_evals', 5), min_evals=node_algorithm_args.get('min_evals', 5), rel_improve_tol=node_algorithm_args.get('rel_improve_tol', 0.), improve_tol=node_algorithm_args.get('improve_tol', None), verbose=1)
+	callback = CustomEvalCallback(eval_env, eval_freq=int(save_every_timestep/num_envs), eval_offline=node_algorithm_args.get('eval_offline', True), n_eval_episodes=n_eval_episodes, log_path=logger.get_dir(), callback_after_eval=stop_train_callback, verbose=1, save_model=save_model, cleanup=True, time_run=time_run)
 
 	return model, callback
 
-def compute_decomposition_policies(config_file_path: str, algorithm: str, save_dir: str, run: int = None, env_device: str = 'cpu', save_model: bool = False):
+def compute_decomposition_policies(config_file_path: str, algorithm: str, save_dir: str, run: int = None, env_device: str = 'cpu', save_model: bool = False, time_run: str = None):
 	
 	env_name = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(config_file_path))))
 	if ((env_device=='cuda') or (env_device=='mps')):
@@ -448,7 +448,7 @@ def compute_decomposition_policies(config_file_path: str, algorithm: str, save_d
 		with open(os.path.join(subpolicy_save_dir, 'node_cfg.yaml'), 'w') as f:
 			YAML(typ='rt', pure=True).dump(node_cfg, f)
 
-		model, callback = setup_subpolicy_computation(node_environment_args, node_algorithm_args, node_policy_args, subpolicy_save_dir, frozen_weights, env_device, save_model)
+		model, callback = setup_subpolicy_computation(node_environment_args, node_algorithm_args, node_policy_args, subpolicy_save_dir, frozen_weights, env_device, save_model, time_run)
 
 		# If any active inputs then train
 		if (not is_root):
@@ -551,6 +551,7 @@ def main():
 	parser.add_argument('--run', type=int, default=None, help='run number')
 	parser.add_argument('--env_device', type=str, default='cpu', help='cpu/cuda does the environment run on GPU?')
 	parser.add_argument('--save_intermittent_model', default=False, action='store_true', help='save intermittent models?')
+	parser.add_argument('--time_run', type=str, default=None, help='record timings (only available with cuda)')
 	# parser.add_argument('--profile', default=False, action='store_true', help='profile this run?')
 
 	args = parser.parse_args()
@@ -564,14 +565,14 @@ def main():
 	elif not ((env_device=='cuda') or (env_device=='cpu')):
 		NotImplementedError
 	save_model = args.save_intermittent_model
-	# profile_run = args.profile
+	time_run = args.time_run
 
 	cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, device_dir, algo, 'sweep_optimized_cfg.yaml')
 	if (not os.path.isfile(cfg_abs_path)):
 		cfg_abs_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'configs', env_name, device_dir, algo, 'cfg.yaml')
 	save_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data', env_name, device_dir)
 
-	compute_decomposition_policies(config_file_path=cfg_abs_path, algorithm=algo, save_dir=save_dir, run=run_id, env_device=env_device, save_model=save_model)
+	compute_decomposition_policies(config_file_path=cfg_abs_path, algorithm=algo, save_dir=save_dir, run=run_id, env_device=env_device, save_model=save_model, time_run=time_run)
 
 if __name__=='__main__':
 	main()
