@@ -9,6 +9,7 @@ register(id='Quadcopter-v0', entry_point='stable_baselines3.systems.quadcopter:Q
 register(id='QuadcopterSkipStep-v0', entry_point='stable_baselines3.systems.quadcopter_skipstep:QuadcopterSkipStep')
 register(id='QuadcopterTT-v0', entry_point='stable_baselines3.systems.quadcopter_tt:QuadcopterTT')
 register(id='QuadcopterDecomposition-v0', entry_point='stable_baselines3.systems.quadcopter_decomposition:QuadcopterDecomposition')
+register(id='QuadcopterTTDecomposition-v0', entry_point='stable_baselines3.systems.quadcopter_tt_decomposition:QuadcopterTTDecomposition')
 
 register(id='CartPoleCustom-v0', entry_point='stable_baselines3.systems.cartpole:CartPole')
 

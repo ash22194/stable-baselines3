@@ -13,7 +13,7 @@ import gymnasium as gym
 import numpy as np
 from typing import Callable, Dict
 
-from stable_baselines3.gpu_systems import GPUQuadcopter, GPUQuadcopterTT, GPUQuadcopterDecomposition, GPUUnicycle
+from stable_baselines3.gpu_systems import GPUQuadcopterDecomposition, GPUQuadcopterTTDecomposition
 
 from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.callbacks import BaseCallback, CustomSaveLogCallback, CustomEvalCallback, StopTrainingOnNoModelImprovement
@@ -24,39 +24,6 @@ from stable_baselines3.common.learning_schedules import linear_schedule, decay_s
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.utils import get_latest_run_id
 from stable_baselines3.common.sb2_compat.rmsprop_tf_like import RMSpropTFLike
-
-def initialize_environment(environment_args, env_device: str= 'cpu'):
-
-	num_envs = environment_args.get('num_envs')
-	if ((env_device=='cuda') or (env_device=='mps')):
-		if (environment_args.get('name')=='GPUQuadcopter'):
-			env = GPUQuadcopter(device=env_device, **(environment_args.get('environment_kwargs', dict())))
-		elif (environment_args.get('name')=='GPUQuadcopterTT'):
-			env = GPUQuadcopterTT(device=env_device, **(environment_args.get('environment_kwargs', dict())))
-		elif (environment_args.get('name')=='GPUQuadcopterDecomposition'):
-			env = GPUQuadcopterDecomposition(device=env_device, **(environment_args.get('environment_kwargs', dict())))
-		elif (environment_args.get('name')=='GPUUnicycle'):
-			env = GPUUnicycle(device=env_device, **(environment_args.get('environment_kwargs', dict())))
-		else:
-			NotImplementedError
-		env = GPUVecEnv(env, num_envs=num_envs)
-	else:
-		normalized_rewards = environment_args.get('normalized_rewards')
-		env = make_vec_env(
-			environment_args.get('name'), n_envs=num_envs, 
-			env_kwargs=environment_args.get('environment_kwargs', dict()),
-			vec_env_cls=DummyVecEnv
-		)
-		if (normalized_rewards):
-			env = VecNormalize(
-				env,
-				norm_obs=False, # Batch normalization
-				norm_reward=True,
-				training=True,
-				gamma=algorithm_args['algorithm_kwargs'].get('gamma', 0.99)
-			)
-
-	return env
 
 def parse_common_args(cfg: dict, env_device: str = 'cpu'):
 
@@ -169,14 +136,10 @@ def parse_decomposition_args(decomposition_args):
 
 def get_gpu_env(env_name: str, env_device: str, env_kwargs: Dict = dict()):
 
-	if (env_name=='GPUQuadcopter'):
-		env = GPUQuadcopter(device=env_device, **env_kwargs)
-	elif (env_name=='GPUQuadcopterTT'):
-		env = GPUQuadcopterTT(device=env_device, **env_kwargs)
-	elif (env_name=='GPUQuadcopterDecomposition'):
+	if (env_name=='GPUQuadcopterDecomposition'):
 		env = GPUQuadcopterDecomposition(device=env_device, **env_kwargs)
-	elif (env_name=='GPUUnicycle'):
-		env = GPUUnicycle(device=env_device, **env_kwargs)
+	elif (env_name=='GPUQuadcopterTTDecomposition'):
+		env = GPUQuadcopterTTDecomposition(device=env_device, **env_kwargs)
 	else:
 		env = None
 	return env
@@ -189,12 +152,15 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 	num_envs = node_environment_args.get('num_envs')
 	# eval_envname = node_environment_args.get('eval_envname', node_environment_args.get('name'))
 	eval_envname = node_environment_args.get('name')
+	eval_env_kwargs = node_environment_args['environment_kwargs']
+	if (eval_env_kwargs.get('intermittent_starts', None) is not None):
+		eval_env_kwargs['intermittent_starts'] = False
 	n_eval_episodes = node_algorithm_args.get('n_eval_episodes', 30)
 	if ((env_device=='cuda') or (env_device=='mps')):
 		env = get_gpu_env(node_environment_args.get('name'), env_device, node_environment_args.get('environment_kwargs', dict()))
 		env = GPUVecEnv(env, num_envs=num_envs)
 
-		eval_env = get_gpu_env(eval_envname, env_device, node_environment_args.get('environment_kwargs', dict()))
+		eval_env = get_gpu_env(eval_envname, env_device, eval_env_kwargs)
 	else:
 		normalized_rewards = node_environment_args.get('normalized_rewards')
 		env = make_vec_env(
@@ -211,7 +177,7 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 				gamma=node_algorithm_args['algorithm_kwargs'].get('gamma', 0.99)
 			)
 
-		eval_env = gym.make(eval_envname, **node_environment_args['environment_kwargs'])
+		eval_env = gym.make(eval_envname, **eval_env_kwargs)
 
 	if (eval_env is None):
 		eval_env = gym.make(eval_envname, **(node_environment_args.get('environment_kwargs', dict())))
@@ -239,6 +205,15 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 
 	else:
 		node_net_arch = node_policy_args['policy_kwargs']['net_arch']
+		# append appropriate observtion dims for different policy modules
+		for inna in range(len(node_net_arch['pi'])):
+			node_net_arch['pi'][inna][1] = (env.env_method('get_obs_dims', state_subdims=node_net_arch['pi'][inna][1])[0])
+		if (type(node_net_arch['vf'][0])==list):
+			if (type(node_net_arch['vf'][0][0])==str):
+				node_net_arch['vf'][0] = (env.env_method('get_obs_dims', state_subdims=node_net_arch['vf'][0][0])[0])
+			elif (type(node_net_arch['vf'][0][0])==int):
+				node_net_arch['vf'][0] = (env.env_method('get_obs_dims', state_subdims=node_net_arch['vf'][0])[0])
+
 		# create model
 		if (algorithm == 'A2C'):
 			model = A2CwReg('DecompositionMlpPolicy', env, **node_algorithm_args.get('algorithm_kwargs'), policy_kwargs=node_policy_args.get('policy_kwargs'))

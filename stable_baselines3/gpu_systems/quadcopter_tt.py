@@ -239,7 +239,7 @@ class GPUQuadcopterTT:
 		self.tracking_error += th.linalg.norm((self.state - goal_t)[:,self.th_tracking_dims], dim=1, keepdim=False)
 
 	def _get_cost(self, action, state_):
-		goal_t = self.th_goal[self.step_count.to(dtype=th.int32),:]
+		goal_t = self.th_goal[th.minimum(self.step_count, th.as_tensor([self.horizon-1], device=self.device, dtype=self.th_dtype)).to(device=self.device, dtype=th.int32),:]
 		y = (self.state - goal_t)[:,self.th_cost_dims]
 
 		cost = th.sum((y @ self.th_Q) * y, dim=1, keepdim=False) * self.alpha_cost 

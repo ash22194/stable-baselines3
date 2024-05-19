@@ -21,7 +21,7 @@ class QuadcopterDecomposition(gym.Env):
 				'QT': np.diag(np.concatenate((np.zeros(2), np.ones(10)))),\
 				'goal': np.array([[0.], [0.], [1.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.]]), 'u0': np.array([[m*g], [0.], [0.], [0.]]),\
 				'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,\
-				'X_DIMS_FREE': np.arange(11)+2, 'X_DIMS_FIXED': np.array([]), 'U_DIMS_FREE': np.arange(4), 'U_DIMS_FIXED': np.array([]), 'U_DIMS_CONTROLLED': np.array([]),\
+				'X_DIMS_FREE': np.arange(10)+2, 'X_DIMS_FIXED': np.array([]), 'U_DIMS_FREE': np.arange(4), 'U_DIMS_FIXED': np.array([]), 'U_DIMS_CONTROLLED': np.array([]),\
 				'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.]]),\
 				'x_bounds': np.array([[-10., 10.], [-10., 10.], [0., 2.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.]]),\
 				'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.7*m*g, 0.7*m*g]])
@@ -155,6 +155,16 @@ class QuadcopterDecomposition(gym.Env):
 			obs = self.target_obs_range*obs + self.target_obs_mid
 		return np.float32(obs)
 	
+	def get_obs_dims(self, state_subdims=None):
+		if ((state_subdims is None) or ((type(state_subdims)==str) and (state_subdims=='all'))):
+			return np.arange(self.observation_space.shape[0]).tolist()
+		elif (type(state_subdims)==list):
+			return state_subdims
+		elif (not (type(state_subdims)==np.ndarray)):
+			NotImplementedError
+
+		return state_subdims.tolist()
+	
 	def get_goal_dist(self):
 		return np.linalg.norm((self.state[self.cost_dims_free] - self.goal[self.cost_dims_free,0]))
 
@@ -180,19 +190,19 @@ class QuadcopterDecomposition(gym.Env):
 
 	def dyn_rk4(self, x, u, dt):
 		k1 = self.dyn_full(x, u)
-		k1[self.X_DIMS_FIXED] = 0.
+		k1[self.X_DIMS_FIXED,:] = 0.
 		q = x + 0.5*k1*dt
 
 		k2 = self.dyn_full(q, u)
-		k2[self.X_DIMS_FIXED] = 0.
+		k2[self.X_DIMS_FIXED,:] = 0.
 		q = x + 0.5*k2*dt
 
 		k3 = self.dyn_full(q, u)
-		k3[self.X_DIMS_FIXED] = 0.
+		k3[self.X_DIMS_FIXED,:] = 0.
 		q = x + k3*dt
 
 		k4 = self.dyn_full(q, u)
-		k4[self.X_DIMS_FIXED] = 0.
+		k4[self.X_DIMS_FIXED,:] = 0.
 		
 		q = x + dt * (k1 + 2*k2 + 2*k3 + k4) / 6.0
 

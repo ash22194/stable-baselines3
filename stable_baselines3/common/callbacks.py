@@ -792,6 +792,15 @@ class CustomEvalCallback(EventCallback):
 				if len(self._is_success_buffer) > 0:
 					self.evaluations_successes.append(self._is_success_buffer)
 					kwargs = dict(successes=self.evaluations_successes)
+				if (self.time_run=='cuda'):
+					kwargs.update(
+						dict(time_rollout=self.time_rollout,
+							time_step=self.time_step,
+							time_buffer=self.time_buffer,
+							time_eval=self.time_eval,
+							time_train_loop=self.time_train_loop
+						)
+					)
 
 				np.savez(
 					self.log_path,
@@ -839,6 +848,13 @@ class CustomEvalCallback(EventCallback):
 				if self.best_model_save_path is not None:
 					self.model.save(os.path.join(self.best_model_save_path, "best_model"))
 				self.best_mean_reward = float(mean_reward)
+				if (self.time_run=='cuda'):
+					# note the timings
+					self.best_time_rollout = self.time_rollout
+					self.best_time_step = self.time_step
+					self.best_time_buffer = self.time_buffer
+					self.best_time_eval = self.time_eval
+					self.best_time_train_loop = self.time_train_loop
 				# Trigger callback on new best model, if needed
 				if self.callback_on_new_best is not None:
 					continue_training = self.callback_on_new_best.on_step()
@@ -967,16 +983,46 @@ class CustomEvalCallback(EventCallback):
 	
 	def _cleanup(self):
 		if (self.cleanup):
-			# delete models saved after the best found model
-			for ff in os.listdir(self.log_path):
-				if ('model' in ff):
-					save_id = int(os.path.splitext(ff)[0].split('_')[-1])
-					if (save_id > self.best_timestep):
-						os.remove(os.path.join(self.log_path, ff))
-			# set the model parameters to best performing model saved
-			best_model_filepath = os.path.join(self.log_path, 'model_' + str(self.best_timestep) + '.zip')
-			assert os.path.isfile(best_model_filepath), 'cannot find the best model savefile'
-			self.model.set_parameters(best_model_filepath)
+			# save evaluations till the best model
+			if (self.log_path is not None):
+				self.evaluations_timesteps = [tt for tt in self.evaluations_timesteps if tt<=self.best_timestep]
+				self.evaluations_results = self.evaluations_results[:len(self.evaluations_timesteps)]
+				self.evaluations_length = self.evaluations_length[:len(self.evaluations_timesteps)]
+
+				kwargs = {}
+				# Save success log if present
+				if len(self._is_success_buffer) > 0:
+					self.evaluations_successes = self.evaluations_successes[:len(self.evaluations_timesteps)]
+					kwargs = dict(successes=self.evaluations_successes)
+				if (self.time_run=='cuda'):
+					kwargs.update(
+						dict(time_rollout=self.best_time_rollout,
+							time_step=self.best_time_step,
+							time_buffer=self.best_time_buffer,
+							time_eval=self.best_time_eval,
+							time_train_loop=self.best_time_train_loop
+						)
+					)
+
+				np.savez(
+					self.log_path,
+					timesteps=self.evaluations_timesteps,
+					results=self.evaluations_results,
+					ep_lengths=self.evaluations_length,
+					**kwargs,
+				)
+
+			if (self.save_model):
+				# delete models saved after the best found model
+				for ff in os.listdir(self.log_path):
+					if ('model' in ff):
+						save_id = int(os.path.splitext(ff)[0].split('_')[-1])
+						if (save_id > self.best_timestep):
+							os.remove(os.path.join(self.log_path, ff))
+				# set the model parameters to best performing model saved
+				best_model_filepath = os.path.join(self.log_path, 'model_' + str(self.best_timestep) + '.zip')
+				assert os.path.isfile(best_model_filepath), 'cannot find the best model savefile'
+				self.model.set_parameters(best_model_filepath)
 	
 	def update_child_locals(self, locals_: Dict[str, Any]) -> None:
 		"""

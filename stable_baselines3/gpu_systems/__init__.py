@@ -1,4 +1,5 @@
 from .quadcopter import GPUQuadcopter
 from .quadcopter_tt import GPUQuadcopterTT
 from .quadcopter_decomposition import GPUQuadcopterDecomposition
+from .quadcopter_tt_decomposition import GPUQuadcopterTTDecomposition
 from .unicycle import GPUUnicycle
