@@ -152,7 +152,7 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 	num_envs = node_environment_args.get('num_envs')
 	# eval_envname = node_environment_args.get('eval_envname', node_environment_args.get('name'))
 	eval_envname = node_environment_args.get('name')
-	eval_env_kwargs = node_environment_args['environment_kwargs']
+	eval_env_kwargs = deepcopy(node_environment_args['environment_kwargs'])
 	if (eval_env_kwargs.get('intermittent_starts', None) is not None):
 		eval_env_kwargs['intermittent_starts'] = False
 	n_eval_episodes = node_algorithm_args.get('n_eval_episodes', 30)
@@ -213,6 +213,7 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 				node_net_arch['vf'][0] = (env.env_method('get_obs_dims', state_subdims=node_net_arch['vf'][0][0])[0])
 			elif (type(node_net_arch['vf'][0][0])==int):
 				node_net_arch['vf'][0] = (env.env_method('get_obs_dims', state_subdims=node_net_arch['vf'][0])[0])
+		node_policy_args['policy_kwargs']['net_arch'] = node_net_arch
 
 		# create model
 		if (algorithm == 'A2C'):
