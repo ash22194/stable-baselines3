@@ -340,5 +340,8 @@ def main():
 			print('final obs :', end)
 			print('reward (discounted) : %f (%f)' %(ep_reward, ep_discounted_reward))
 
+	# save the model
+	model.save(os.path.join(model.logger.get_dir(), cfg['policy'].get('save_prefix', 'model') + '_final'))
+
 if __name__=='__main__':
 	main()

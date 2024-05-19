@@ -6,7 +6,7 @@ import meshcat
 from scipy.io import loadmat
 import scipy.spatial.transform as transfm
 
-class GPUQuadcopterTT:
+class GPUQuadcopterTTDecomposition:
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
@@ -19,6 +19,7 @@ class GPUQuadcopterTT:
 			# 'Q': np.diag([1, 1, 0.1, 0, 0, 0.1, 0.01, 0.01, 0.001, 0.001, 0.001, 0.0001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
 			'Q': np.diag([1, 1, 1, 0, 0, 1, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
 			'u0': np.array([[m*g], [0.], [0.], [0.]]), 'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,
+			'X_DIMS_FREE': np.arange(12), 'X_DIMS_FIXED': np.arange(0), 'U_DIMS_FREE': np.arange(4), 'U_DIMS_FIXED': np.arange(0), 'U_DIMS_CONTROLLED': np.arange(0),
 			'x_sample_limits': np.array([[-0.25, 0.25], [-0.25, 0.25], [-0.25, 0.25], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25]]),
 			'x_bounds': np.array([[-5., 5.], [-5., 5.], [-5, 5.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.]]),
 			'max_thrust_factor': 2
@@ -32,9 +33,18 @@ class GPUQuadcopterTT:
 		self.num_envs = num_envs
 
 		self.X_DIMS = param['X_DIMS'] # dimension of observations
+		self.X_DIMS_FREE = param['X_DIMS_FREE']
+		self.X_DIMS_FIXED = param['X_DIMS_FIXED']
 		self.independent_sampling_dims = np.arange(self.X_DIMS)
+		# check that X_DIMS_FIXED and X_DIMS_FREE are subsets of independent_sampling_dims
+		assert np.all(np.any(self.X_DIMS_FREE[:,np.newaxis]==np.concatenate((self.independent_sampling_dims, np.array([self.X_DIMS]))), axis=1)), 'free dims must be a subset of the independent dims'
+		assert np.all(np.any(self.X_DIMS_FIXED[:,np.newaxis]==np.concatenate((self.independent_sampling_dims, np.array([self.X_DIMS]))), axis=1)), 'fixed dims must be a subset of the independent dims'
 		self.observation_dims = np.arange(self.X_DIMS)
+
 		self.U_DIMS = param['U_DIMS']
+		self.U_DIMS_FREE = param['U_DIMS_FREE']
+		self.U_DIMS_FIXED = param['U_DIMS_FIXED']
+		self.U_DIMS_CONTROLLED = param['U_DIMS_CONTROLLED']
 
 		self.u0 = param['u0']
 		self.T = param['T']
@@ -105,7 +115,7 @@ class GPUQuadcopterTT:
 			)
 			target_obs_mid = obs_bounds_mid
 			target_obs_range = obs_bounds_range
-
+		
 		# Create tensor copies of relevant numpy arrays
 		self.th_x_bounds = th.asarray(x_bounds, device=device, dtype=self.th_dtype)
 		self.th_u_limits = th.asarray(u_limits, device=device, dtype=self.th_dtype)
@@ -115,7 +125,6 @@ class GPUQuadcopterTT:
 		self.th_reference_trajectory = th.asarray(trajectory, device=device, dtype=self.th_dtype)
 		self.th_goal = self._interp_goal(th.arange(self.horizon, device=device, dtype=self.th_dtype))
 		self.th_u0 = th.asarray(param['u0'][:,0], device=device, dtype=self.th_dtype)
-		self.th_cost_dims = th.arange(self.X_DIMS, device=device, dtype=th.int)
 		self.th_tracking_dims = th.asarray([0,1,2,3,4,5], device=device, dtype=th.int)
 
 		self.th_action_space_low = th.asarray(self.action_space.low, device=device, dtype=self.th_dtype)
@@ -142,6 +151,7 @@ class GPUQuadcopterTT:
 		# If scaling actions use this
 		if (self.normalized_actions):
 			action = 0.5*((self.th_u_limits[:,0] + self.th_u_limits[:,1]) + action*(self.th_u_limits[:,1] - self.th_u_limits[:,0]))
+		action[:,self.U_DIMS_FIXED] = self.th_u0[self.U_DIMS_FIXED] #TODO should it be 0 instead?
 
 		state_ = self.dyn_rk4(self.state, action, self.dt)
 		state_ = th.minimum(self.th_x_bounds[:,1], th.maximum(self.th_x_bounds[:,0], state_))
@@ -170,21 +180,22 @@ class GPUQuadcopterTT:
 			info = {}
 
 		return self.get_obs(), reward, done, False, info
-	
+
 	def reset(self, done=None, seed=None, options=None, state=None):
 		if (state is not None):
 			assert (len(state.shape)==2 and state.shape[0]==self.num_envs and state.shape[1]==self.X_DIMS), 'Invalid input state'
-			self.state[:] = state
 			self.step_count[:] = 0.
 			self.cumm_reward[:] = 0.
 			self.tracking_error[:] = 0.
+			self.state[:] = state.clone().to(self.device)
+			self.state[:,self.X_DIMS_FIXED] = self.th_goal[0,self.X_DIMS_FIXED]
 
 		else:
 			if (done is not None):
 				assert done.shape[0]==self.num_envs and type(done)==th.Tensor and done.dtype==th.bool, "done tensor of shape %d and type %s"%(done.shape[0], type(done))
 			else:
 				done = th.ones(self.num_envs, device=self.device, dtype=th.bool)
-
+			
 			num_done = th.sum(done)
 			if (num_done > 0):
 				step_count_new = th.randint(low=0, high=self.step_count_high, size=(num_done,1), dtype=self.th_dtype, device=self.device)
@@ -192,6 +203,8 @@ class GPUQuadcopterTT:
 				state_new = ((th.rand((num_done, self.independent_sampling_dims.shape[0]), device=self.device, dtype=self.th_dtype) - 0.5) * (self.th_x_sample_limits_range))
 				state_new = (((self.horizon - step_count_new) / self.horizon) * state_new)
 				state_new += (self.th_goal[step_count_new[:,0].to(dtype=th.int32),:] + th.unsqueeze(self.th_x_sample_limits_mid, dim=0))
+				goal_t = self.th_goal[step_count_new[:,0].to(dtype=th.int32),:]
+				state_new[:,self.X_DIMS_FIXED] = goal_t[:,self.X_DIMS_FIXED]
 
 				self.step_count[done] = step_count_new[:,0]
 				self.state[done,:] = state_new
@@ -209,10 +222,23 @@ class GPUQuadcopterTT:
 			obs = (obs - self.th_obs_bounds_mid) / self.th_obs_bounds_range
 			obs = self.th_target_obs_range*obs + self.th_target_obs_mid
 		return obs
+	
+	def get_obs_dims(self, state_subdims=None):
+		if ((state_subdims is None) or ((type(state_subdims)==str) and (state_subdims=='all'))):
+			return th.arange(self.observation_space.shape[0]).tolist()
+		elif (type(state_subdims)==list) or (type(state_subdims)==np.ndarray):
+			state_subdims = th.asarray(state_subdims)
+		obs_state_subdims = state_subdims[state_subdims < self.X_DIMS]
+		assert (obs_state_subdims.shape[0] == (state_subdims.shape[0]-1)) and (th.sum(state_subdims == self.X_DIMS)==1) and (th.sum(state_subdims > self.X_DIMS)==0)
+
+		# repeat based on the reference trajectory horizon
+		obs_state_subdims = (self.X_DIMS * (th.arange(self.reference_trajectory_horizon) + 1).reshape(-1, 1) + obs_state_subdims + 1).reshape(-1)
+		obs_state_subdims = th.concatenate((state_subdims, obs_state_subdims))
+		return obs_state_subdims.tolist()
 
 	def get_goal_dist(self):
 		return self.tracking_error
-
+	
 	def _set_obs(self):
 		self.obs[:,:self.observation_dims.shape[0]] = self.state[:,self.observation_dims]
 		self.obs[:,self.observation_dims.shape[0]] = self.step_count
@@ -233,14 +259,14 @@ class GPUQuadcopterTT:
 
 		goal = th.transpose(self.th_reference_trajectory[:,lower_id] + (self.th_reference_trajectory[:,higher_id] - self.th_reference_trajectory[:,lower_id])*(ref_step_count - lower_id), 0, 1)
 		return goal
-
+	
 	def _update_tracking_error(self):
 		goal_t = self.th_goal[th.minimum(self.step_count, th.as_tensor([self.horizon-1], device=self.device, dtype=self.th_dtype)).to(device=self.device, dtype=th.int32),:]
 		self.tracking_error += th.linalg.norm((self.state - goal_t)[:,self.th_tracking_dims], dim=1, keepdim=False)
 
 	def _get_cost(self, action, state_):
 		goal_t = self.th_goal[th.minimum(self.step_count, th.as_tensor([self.horizon-1], device=self.device, dtype=self.th_dtype)).to(device=self.device, dtype=th.int32),:]
-		y = (self.state - goal_t)[:,self.th_cost_dims]
+		y = (self.state - goal_t)
 
 		cost = th.sum((y @ self.th_Q) * y, dim=1, keepdim=False) * self.alpha_cost 
 		cost = cost + th.sum(((action - self.th_u0) @ self.th_R) * (action - self.th_u0), dim=1, keepdim=False) * self.alpha_action_cost
@@ -249,7 +275,7 @@ class GPUQuadcopterTT:
 		reached_goal = th.zeros((self.num_envs,), device=self.device, dtype=th.bool)
 
 		return cost, reached_goal
-
+	
 	def _get_terminal_cost(self, done=None):
 		if (done is not None):
 			assert done.shape[0]==self.num_envs and type(done)==th.Tensor and done.dtype==th.bool, "done tensor of shape %d and type %s"%(done.shape[0], type(done))
@@ -257,26 +283,33 @@ class GPUQuadcopterTT:
 			done = th.ones(self.num_envs, device=self.device, dtype=th.bool)
 
 		goal_t = self.th_goal[(self.horizon-1):self.horizon,:]
-		y = (self.state - goal_t)[:,self.th_cost_dims]
+		y = (self.state - goal_t)
 
 		cost = th.sum((y @ self.th_QT) * y, dim=1, keepdim=False) * self.alpha_terminal_cost
 		cost = cost * done
 
 		return cost
-
+	
 	def dyn_rk4(self, x, u, dt):
 		k1 = self.dyn_full(x, u)
+		k1[:,self.X_DIMS_FIXED] = 0.
 		q = x + 0.5*k1*dt
 
 		k2 = self.dyn_full(q, u)
+		k2[:,self.X_DIMS_FIXED] = 0.
 		q = x + 0.5*k2*dt
 
 		k3 = self.dyn_full(q, u)
+		k3[:,self.X_DIMS_FIXED] = 0.
 		q = x + k3*dt
 
 		k4 = self.dyn_full(q, u)
+		k4[:,self.X_DIMS_FIXED] = 0.
 		
 		q = x + dt * (k1 + 2*k2 + 2*k3 + k4) / 6.0
+		
+		goal_t1 = self.th_goal[th.minimum(self.step_count+1, th.as_tensor([self.horizon-1], device=self.device, dtype=self.th_dtype)).to(device=self.device, dtype=th.int32),:]
+		q[:,self.X_DIMS_FIXED] = goal_t1[:,self.X_DIMS_FIXED]
 
 		return q
 	
@@ -339,7 +372,7 @@ class GPUQuadcopterTT:
 		dx[:,11] = t20*t21*t23*(-t10*x8*x9+t6*t10*x9*x10-t9*t15*x8*x9+t10*t15*x8*x9+I1*I3*x8*x9+I2*I3*x8*x9+I2*bk*t2*u4+I3*l*t5*u3-I1*I3*t6*x9*x10+I2*I3*t6*x9*x10+I1*I2*t15*x8*x9-I1*I3*t15*x8*x9+t6*t9*t15*x9*x10-t6*t10*t15*x9*x10+t2*t3*t5*t6*t9*t14-t2*t3*t5*t6*t10*t14-t2*t3*t5*t9*x8*x10+t2*t3*t5*t10*x8*x10-I1*I2*t6*t15*x9*x10+I1*I3*t6*t15*x9*x10-I1*I2*t2*t3*t5*t6*t14+I1*I3*t2*t3*t5*t6*t14+I1*I2*t2*t3*t5*x8*x10-I1*I3*t2*t3*t5*x8*x10)
 
 		return dx
-
+	
 	def _create_visualizer(self):
 		self.viz = meshcat.Visualizer()
 		for id in range(self.num_envs):

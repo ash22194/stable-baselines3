@@ -1,31 +1,31 @@
+import os
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-from copy import deepcopy
 import meshcat
+from scipy.io import loadmat
 import scipy.spatial.transform as transfm
+from ipdb import set_trace
 
-class QuadcopterDecomposition(gym.Env):
+class QuadcopterTTDecomposition(gym.Env):
 	"""Custom Environment that follows gym interface"""
 	metadata = {'render_modes': ['human']}
 
 	def __init__(
-		self, param=dict(), normalized_actions=True, normalized_observations=True, alpha_cost=1., alpha_terminal_cost=1.):
+		self, trajectory_file, param=dict(), fixed_starts=False, reference_trajectory_horizon=0, normalized_actions=True, normalized_observations=True, intermittent_starts=False, alpha_cost=1., alpha_action_cost=1., alpha_terminal_cost=1.):
 		# super(Quadcopter, self).__init__()
 		# Define model paramters
 		m = 0.5
 		g = 9.81
-		param_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),\
-				# 'Q': 0.85*np.diag([5, 0.001, 0.001, 5, 0.5, 0.5, 0.05, 0.075, 0.075, 0.05]), 'R': 0.085*np.diag([0.002, 0.001, 0.001, 0.004]),\
-				'Q': np.diag([0, 0, 1, 0, 0, 1, 1, 1, 0.01, 0.1, 0.1, 0.01]), 'R': 0.02*np.diag([0.002, 0.001, 0.001, 0.004]),\
-				'QT': np.diag(np.concatenate((np.zeros(2), np.ones(10)))),\
-				'goal': np.array([[0.], [0.], [1.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.]]), 'u0': np.array([[m*g], [0.], [0.], [0.]]),\
-				'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,\
-				'X_DIMS_FREE': np.arange(10)+2, 'X_DIMS_FIXED': np.array([]), 'U_DIMS_FREE': np.arange(4), 'U_DIMS_FIXED': np.array([]), 'U_DIMS_CONTROLLED': np.array([]),\
-				'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.]]),\
-				'x_bounds': np.array([[-10., 10.], [-10., 10.], [0., 2.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.]]),\
-				'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.7*m*g, 0.7*m*g]])
-				}
+		param_ = {'m': m, 'I': np.diag([4.86*1e-3, 4.86*1e-3, 8.8*1e-3]), 'l': 0.225, 'g': g, 'bk': 1.14*1e-7/(2.98*1e-6),
+			# 'Q': np.diag([1, 1, 0.1, 0, 0, 0.1, 0.01, 0.01, 0.001, 0.001, 0.001, 0.0001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
+			'Q': np.diag([1, 1, 1, 0, 0, 1, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]), 'R': 0.1*np.diag([0.002, 0.001, 0.001, 0.004]), 'QT': 2*np.eye(12),
+			'u0': np.array([[m*g], [0.], [0.], [0.]]), 'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,
+			'X_DIMS_FREE': np.arange(12), 'X_DIMS_FIXED': np.arange(0), 'U_DIMS_FREE': np.arange(4), 'U_DIMS_FIXED': np.arange(0), 'U_DIMS_CONTROLLED': np.arange(0),
+			'x_sample_limits': np.array([[-0.25, 0.25], [-0.25, 0.25], [-0.25, 0.25], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-np.pi/6, np.pi/6], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25], [-1.25, 1.25]]),
+			'x_bounds': np.array([[-5., 5.], [-5., 5.], [-5, 5.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.], [-6., 6.]]),
+			'max_thrust_factor': 2
+		}
 		param_.update(param)
 		param_['gamma_'] = np.exp(-param_['lambda_']*param_['dt'])
 		param.update(param_)
@@ -33,27 +33,41 @@ class QuadcopterDecomposition(gym.Env):
 		self.X_DIMS = param['X_DIMS'] # dimension of observations
 		self.X_DIMS_FREE = param['X_DIMS_FREE']
 		self.X_DIMS_FIXED = param['X_DIMS_FIXED']
-		self.independent_sampling_dims = np.arange(10) + 2
+		self.independent_sampling_dims = np.arange(self.X_DIMS)
 		# check that X_DIMS_FIXED and X_DIMS_FREE are subsets of independent_sampling_dims
 		assert np.all(np.any(self.X_DIMS_FREE[:,np.newaxis]==np.concatenate((self.independent_sampling_dims, np.array([self.X_DIMS]))), axis=1)), 'free dims must be a subset of the independent dims'
 		assert np.all(np.any(self.X_DIMS_FIXED[:,np.newaxis]==np.concatenate((self.independent_sampling_dims, np.array([self.X_DIMS]))), axis=1)), 'fixed dims must be a subset of the independent dims'
 		self.observation_dims = np.arange(self.X_DIMS)
-		self.cost_dims_free = np.arange(10) + 2
-		self.cost_dims_free = self.cost_dims_free[np.any(self.cost_dims_free[:,np.newaxis] == self.X_DIMS_FREE, axis=1)]
+		self.tracking_dims = np.array([0,1,2,3,4,5])
 
 		self.U_DIMS = param['U_DIMS']
 		self.U_DIMS_FREE = param['U_DIMS_FREE']
 		self.U_DIMS_FIXED = param['U_DIMS_FIXED']
 		self.U_DIMS_CONTROLLED = param['U_DIMS_CONTROLLED']
 
-		self.goal = param['goal']
 		self.u0 = param['u0']
 		self.T = param['T']
 		self.dt = param['dt']
 		self.horizon = round(self.T / self.dt)
-		self.x_sample_limits = param['x_sample_limits'][self.independent_sampling_dims,:] # reset within these limits
-		self.x_bounds = param['x_bounds']
-		self.u_limits = param['u_limits']
+
+		assert trajectory_file.endswith('.mat'), 'Trajectory file must be a .mat'
+		trajectory_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))), 'examples/configs/quadcopter_tt/trajectories', trajectory_file)
+		trajectory = loadmat(trajectory_file)['trajectory']
+		self.reference_trajectory_horizon = int(reference_trajectory_horizon/self.T*trajectory.shape[1])
+		self.reference_trajectory = trajectory.copy()
+		self.goal = self._interp_goal(np.arange(self.horizon))
+
+		self.x_sample_limits = param['x_sample_limits'] # reset within these limits
+		self.x_bounds = np.zeros(param['x_bounds'].shape)
+		self.x_bounds[:,0] = param['x_bounds'][:,0] + np.min(trajectory, axis=1)
+		self.x_bounds[:,1] = param['x_bounds'][:,1] + np.max(trajectory, axis=1)
+		
+		self.u_limits = np.zeros((self.U_DIMS, 2))
+		max_thrust = param['max_thrust_factor']*m*g
+		self.u_limits[0,1] = max_thrust
+		self.u_limits[1,:] = np.array([-0.2*max_thrust, 0.2*max_thrust])
+		self.u_limits[2,:] = np.array([-0.2*max_thrust, 0.2*max_thrust])
+		self.u_limits[3,:] = np.array([-0.4*max_thrust, 0.4*max_thrust])
 		self.Q = param['Q']
 		self.QT = param['QT']
 		self.R = param['R']
@@ -65,10 +79,15 @@ class QuadcopterDecomposition(gym.Env):
 		self.g = param['g']
 		self.bk = param['bk']
 		self.I = param['I']
+		self.fixed_starts = fixed_starts
 		self.normalized_actions = normalized_actions
 		self.normalized_observations = normalized_observations
+		if (intermittent_starts):
+			self.step_count_high = self.horizon
+		else:
+			self.step_count_high = 1
 		self.alpha_cost = alpha_cost
-		self.alpha_action_cost = alpha_cost
+		self.alpha_action_cost = alpha_action_cost
 		self.alpha_terminal_cost = alpha_terminal_cost
 		# self.reset()
 
@@ -84,17 +103,24 @@ class QuadcopterDecomposition(gym.Env):
 		state_obs_bounds_range = 0.5*(self.x_bounds[self.observation_dims,1] - self.x_bounds[self.observation_dims,0])
 		time_obs_bounds_mid = 0.5*self.horizon
 		time_obs_bounds_range = 0.5*self.horizon
-		self.obs_bounds_mid = np.concatenate((state_obs_bounds_mid, np.array([time_obs_bounds_mid])))
-		self.obs_bounds_range = np.concatenate((state_obs_bounds_range, np.array([time_obs_bounds_range])))			
-		
+		trajectory_input_obs_bounds_mid = np.tile(0.5*(self.x_bounds[self.observation_dims,1] + self.x_bounds[self.observation_dims,0]), self.reference_trajectory_horizon)
+		trajectory_input_obs_bounds_range = np.tile(0.5*(self.x_bounds[self.observation_dims,1] - self.x_bounds[self.observation_dims,0]), self.reference_trajectory_horizon)
+
+		self.obs_bounds_mid = np.concatenate((state_obs_bounds_mid, np.array([time_obs_bounds_mid]), trajectory_input_obs_bounds_mid))
+		self.obs_bounds_range = np.concatenate((state_obs_bounds_range, np.array([time_obs_bounds_range]), trajectory_input_obs_bounds_range))			
+
+		print('Observation dimension :', self.obs_bounds_mid.shape)
+		print('X bounds :', self.x_bounds)
+
 		if (normalized_observations):
-			self.observation_space = spaces.Box(low=-1, high=1, shape=(self.observation_dims.shape[0]+1,), dtype=np.float32)
-			self.target_obs_mid = np.zeros(self.observation_dims.shape[0]+1)
-			self.target_obs_range = np.ones(self.observation_dims.shape[0]+1)
+			self.observation_space = spaces.Box(low=-1, high=1, shape=self.obs_bounds_mid.shape, dtype=np.float32)
+			self.target_obs_mid = np.zeros(self.obs_bounds_mid.shape)
+			self.target_obs_range = np.ones(self.obs_bounds_range.shape)
+
 		else:
 			self.observation_space = spaces.Box(
-				low=np.concatenate((self.x_bounds[self.observation_dims,0], np.array([0.]))), 
-				high=np.concatenate((self.x_bounds[self.observation_dims,1], np.array([self.horizon]))), 
+				low=self.obs_bounds_mid - self.obs_bounds_range, 
+				high=self.obs_bounds_mid + self.obs_bounds_range, 
 				dtype=np.float32
 			)
 			self.target_obs_mid = self.obs_bounds_mid
@@ -115,13 +141,14 @@ class QuadcopterDecomposition(gym.Env):
 
 		self.state = state_
 		self.step_count += 1
+		self._update_tracking_error()
 
 		if ((self.step_count >= self.horizon) or reached_goal):
 			done = True
 			terminal_cost = self._get_terminal_cost() # terminal cost
 			reward -= terminal_cost
 			info = {
-				'ep_terminal_goal_dist': self.get_goal_dist(),
+				'ep_tracking_err': self.get_goal_dist(),
 				'ep_terminal_cost': terminal_cost,
 				'step_count' : self.step_count
 			}
@@ -133,23 +160,36 @@ class QuadcopterDecomposition(gym.Env):
 
 	def reset(self, seed=None, options=None, state=None):
 		super().reset(seed=seed)
-		if (state is None):
-			self.state = deepcopy(self.goal[:,0])
-			self.state[self.independent_sampling_dims] = 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1]) + (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+		self.step_count = int(np.random.randint(low=0, high=self.step_count_high))
+		if (self.fixed_starts):
+			self.state = self.goal[:,self.step_count]
 		else:
-			assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
-			self.state = state
-
-		self.state[self.X_DIMS_FIXED] = self.goal[self.X_DIMS_FIXED,0]
-		self.step_count = 0
+			if (state is None):
+				self.state = (self.horizon - self.step_count) / self.horizon * (np.random.rand(self.independent_sampling_dims.shape[0]) - 0.5) * (self.x_sample_limits[:,1] - self.x_sample_limits[:,0])
+				self.state += self.goal[:,self.step_count] + 0.5 * (self.x_sample_limits[:,0] + self.x_sample_limits[:,1])
+			else:
+				assert len(state.shape)==1 and state.shape[0]==self.X_DIMS, 'Invalid input state'
+				self.state = state
+		
+		# set_trace()
+		self.state[self.X_DIMS_FIXED] = self.goal[self.X_DIMS_FIXED, self.step_count]
+		self.tracking_error = 0
+		self._update_tracking_error()
 		info = {'step_count' : self.step_count}
 
 		return self.get_obs(), info
-
+	
 	def get_obs(self, normalized=None):
-		obs = np.zeros(self.observation_dims.shape[0]+1)
+		obs = np.zeros(self.obs_bounds_mid.shape)
 		obs[:self.observation_dims.shape[0]] = self.state[self.observation_dims]
-		obs[-1] = self.step_count
+		obs[self.observation_dims.shape[0]] = self.step_count
+		reference_trajectory_start = int(self.step_count / self.horizon * self.reference_trajectory.shape[1])
+		reference_trajectory_ids = np.minimum(
+			self.reference_trajectory.shape[1]-1,
+			np.arange(reference_trajectory_start, reference_trajectory_start+self.reference_trajectory_horizon)
+		)
+		delta_reference = self.state[:,np.newaxis] - self.reference_trajectory[:,reference_trajectory_ids]
+		obs[(self.observation_dims.shape[0]+1):] = np.reshape(delta_reference, (self.reference_trajectory.shape[0]*self.reference_trajectory_horizon,), order='F')
 		if ((normalized == None) and self.normalized_observations) or (normalized == True):
 			obs = (obs - self.obs_bounds_mid) / self.obs_bounds_range
 			obs = self.target_obs_range*obs + self.target_obs_mid
@@ -159,35 +199,59 @@ class QuadcopterDecomposition(gym.Env):
 		if ((state_subdims is None) or ((type(state_subdims)==str) and (state_subdims=='all'))):
 			return np.arange(self.observation_space.shape[0]).tolist()
 		elif (type(state_subdims)==list):
-			return state_subdims
+			state_subdims = np.array(state_subdims)
 		elif (not (type(state_subdims)==np.ndarray)):
 			NotImplementedError
 
-		return state_subdims.tolist()
+		obs_state_subdims = state_subdims[state_subdims < self.X_DIMS]
+		assert (obs_state_subdims.shape[0] == (state_subdims.shape[0]-1)) and (np.sum(state_subdims == self.X_DIMS)==1) and (np.sum(state_subdims > self.X_DIMS)==0)
+
+		# repeat based on the reference trajectory horizon
+		obs_state_subdims = (self.X_DIMS * (np.arange(self.reference_trajectory_horizon) + 1).reshape(-1, 1) + obs_state_subdims + 1).reshape(-1)
+		obs_state_subdims = np.concatenate((state_subdims, obs_state_subdims))
+		return obs_state_subdims.tolist()
 	
 	def get_goal_dist(self):
-		return np.linalg.norm((self.state[self.cost_dims_free] - self.goal[self.cost_dims_free,0]))
+		return self.tracking_error
+	
+	def _interp_goal(self, step_count):
+		ref_step_count = step_count / self.horizon * (self.reference_trajectory.shape[1] - 1)
+		lower_id = np.minimum(np.floor(ref_step_count), self.reference_trajectory.shape[1] - 1).astype(np.int32)
+		higher_id = np.minimum(lower_id+1, self.reference_trajectory.shape[1] - 1).astype(np.int32)
 
+		return (self.reference_trajectory[:,lower_id] + (self.reference_trajectory[:,higher_id] - self.reference_trajectory[:,lower_id])*(ref_step_count - lower_id))
+
+	def _update_tracking_error(self):
+		x = self.state[:,np.newaxis]
+		t = min(self.step_count, self.horizon-1)
+		goal_t = self.goal[:,t:(t+1)]
+		y = (x - goal_t)[self.tracking_dims,:]
+		self.tracking_error += np.linalg.norm(y)
+	
 	def _get_cost(self, action, state_):
-		x = self.get_obs(normalized=False)
-		y = x[:self.observation_dims.shape[0],np.newaxis] - self.goal[self.observation_dims,:]
+		x = self.state[:,np.newaxis]
+		t = min(self.step_count, self.horizon-1)
+		goal_t = self.goal[:,t:(t+1)]
+		y = (x - goal_t)
+
 		a = action[:,np.newaxis]
 
 		cost = y.T @ (self.Q @ y) * self.alpha_cost + (a - self.u0).T @ (self.R @ (a - self.u0)) * self.alpha_action_cost
 		cost = cost[0,0] * self.dt
 
-		reached_goal = np.linalg.norm(state_[self.observation_dims] - self.goal[self.observation_dims,0]) <= 1e-2	
+		reached_goal = False
 
 		return cost, reached_goal
-	
+
 	def _get_terminal_cost(self):
-		x = self.get_obs(normalized=False)
-		y = x[:self.observation_dims.shape[0],np.newaxis] - self.goal[self.observation_dims,:]
+		x = self.state[:,np.newaxis]
+		goal_t = self.goal[:,(self.horizon-1):self.horizon]
+		y = (x - goal_t)
 
 		cost = y.T @ (self.QT @ y) * self.alpha_terminal_cost
 
 		return cost[0,0]
-
+	
 	def dyn_rk4(self, x, u, dt):
 		k1 = self.dyn_full(x, u)
 		k1[self.X_DIMS_FIXED,:] = 0.
@@ -205,6 +269,10 @@ class QuadcopterDecomposition(gym.Env):
 		k4[self.X_DIMS_FIXED,:] = 0.
 		
 		q = x + dt * (k1 + 2*k2 + 2*k3 + k4) / 6.0
+
+		t1 = min(self.step_count+1, self.horizon-1)
+		goal_t1 = self.goal[:,t1:(t1+1)]
+		q[self.X_DIMS_FIXED,:] = goal_t1[self.X_DIMS_FIXED,:]
 
 		return q
 	
@@ -326,6 +394,36 @@ class QuadcopterDecomposition(gym.Env):
 			meshcat.geometry.MeshLambertMaterial(color=heading_color, reflectivity=heading_reflectivity)
 		)
 
+		# create the trajectory waypoints
+		waypoint_size = [0.05, 0.05, 0.05]
+		waypoint_reflectivity = 0.9
+		waypoint_heading_color = 0xFFFFFF
+		start_color = 0x008000
+		interm_color = 0x884000
+		end_color = 0xFF0000
+		
+		for ii in range(self.reference_trajectory.shape[1]):
+			if (ii==0):
+				waypoint_color = start_color
+			elif (ii==(self.reference_trajectory.shape[1]-1)):
+				waypoint_color = end_color
+			else:
+				waypoint_color = interm_color
+
+			self.viz['traj_point_%d'%(ii)].set_object(meshcat.geometry.Ellipsoid(radii=waypoint_size),
+			meshcat.geometry.MeshLambertMaterial(color=waypoint_color, reflectivity=waypoint_reflectivity))
+			self.viz['traj_point_%d'%(ii)]['heading'].set_object(
+				meshcat.geometry.TriangularMeshGeometry(
+					vertices=np.array([[0., waypoint_size[1]/2, 0.], [0., -waypoint_size[1]/2, 0.], [waypoint_size[0]*2, 0., 0.]]),
+					faces=np.array([[0, 1, 2]])
+				),
+				meshcat.geometry.MeshLambertMaterial(color=waypoint_heading_color, reflectivity=waypoint_reflectivity)
+			)
+			waypoint_pose = np.eye(4)
+			waypoint_pose[:3,3] = self.reference_trajectory[:3,ii]
+			waypoint_pose[:3,:3] = transfm.Rotation.from_euler('yxz', [self.reference_trajectory[4,ii], self.reference_trajectory[3,ii], self.reference_trajectory[5,ii]]).as_matrix()
+			self.viz['traj_point_%d'%(ii)].set_transform(waypoint_pose)
+
 	def render(self, mode='human'):
 		if (not (hasattr(self, 'viz') and isinstance(self.viz, meshcat.Visualizer))):
 			self._create_visualizer()
@@ -333,7 +431,8 @@ class QuadcopterDecomposition(gym.Env):
 		pose[:3,3] = self.state[:3]
 		pose[:3,:3] = transfm.Rotation.from_euler('yxz', [self.state[4], self.state[3], self.state[5]]).as_matrix()
 		self.viz['root'].set_transform(pose)
-		self.viz['root'].set_cam_pos([self.state[0]+2., self.state[1]+2., self.state[2]+1.])
+		mid_point = int(self.reference_trajectory.shape[1] / 2.)
+		self.viz['root'].set_cam_pos([self.reference_trajectory[0, mid_point], self.reference_trajectory[1, mid_point]-3., self.reference_trajectory[2, mid_point]+2.])
 		self.viz['root'].set_cam_target([self.state[0], self.state[1], self.state[2]])
 		return self.viz['root'].get_image()
 

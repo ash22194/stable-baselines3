@@ -19,7 +19,7 @@ class GPUQuadcopterDecomposition:
 				'QT': np.diag(np.concatenate((np.zeros(2), np.ones(10)))),\
 				'goal': np.array([[0.], [0.], [1.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.]]), 'u0': np.array([[m*g], [0.], [0.], [0.]]),\
 				'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,\
-				'X_DIMS_FREE': np.arange(11)+2, 'X_DIMS_FIXED': np.array([]), 'U_DIMS_FREE': np.arange(4), 'U_DIMS_FIXED': np.array([]), 'U_DIMS_CONTROLLED': np.array([]),\
+				'X_DIMS_FREE': np.arange(10)+2, 'X_DIMS_FIXED': np.array([]), 'U_DIMS_FREE': np.arange(4), 'U_DIMS_FIXED': np.array([]), 'U_DIMS_CONTROLLED': np.array([]),\
 				'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.]]),\
 				'x_bounds': np.array([[-10., 10.], [-10., 10.], [0., 2.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.]]),\
 				'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.7*m*g, 0.7*m*g]])
@@ -176,6 +176,7 @@ class GPUQuadcopterDecomposition:
 				assert done.shape[0]==self.num_envs and type(done)==th.Tensor and done.dtype==th.bool, "done tensor of shape %d and type %s"%(done.shape[0], type(done))
 			else:
 				done = th.ones(self.num_envs, device=self.device, dtype=th.bool)
+
 			num_done = th.sum(done)
 			if (num_done > 0):
 				# step_count_new = th.randint(low=0, high=self.horizon, size=(num_done,1), dtype=th.float32, device=self.device)
@@ -203,6 +204,16 @@ class GPUQuadcopterDecomposition:
 			obs = self.th_target_obs_range*obs + self.th_target_obs_mid
 		return obs
 	
+	def get_obs_dims(self, state_subdims=None):
+		if ((state_subdims is None) or ((type(state_subdims)==str) and (state_subdims=='all'))):
+			return th.arange(self.observation_space.shape[0]).tolist()
+		elif (type(state_subdims)==list) or (type(state_subdims)==np.ndarray):
+			state_subdims = th.asarray(state_subdims)
+		elif (not type(state_subdims)==th.Tensor):
+			NotImplementedError
+
+		return state_subdims.tolist()
+
 	def get_goal_dist(self):
 		return th.linalg.norm((self.state[:,self.cost_dims_free] - self.th_goal[self.cost_dims_free]), dim=1, keepdim=False)
 

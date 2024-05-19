@@ -56,7 +56,7 @@ policy:
     net_arch:
       pi:
         - - [0,1,2,3]
-          - [512,512,512]
+          - [2048,2048,2048]
     activation_fn: relu
     optimizer_class: rmsprop
     log_std_init: -0.01946188846120455

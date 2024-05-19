@@ -95,7 +95,7 @@ def run_trial(trial, default_cfg: Dict, sweep_cfg: Dict, save_dir: str, env_devi
 
 	# define pruning callback
 	eval_envname = cfg['environment'].get('eval_envname', cfg['environment']['name'])
-	eval_env_kwargs = cfg['environment'].get('environment_kwargs', dict())
+	eval_env_kwargs = deepcopy(cfg['environment'].get('environment_kwargs', dict()))
 	if (eval_env_kwargs.get('intermittent_starts', None) is not None):
 		eval_env_kwargs['intermittent_starts'] = False
 	eval_env = gym.make(eval_envname, **eval_env_kwargs)
