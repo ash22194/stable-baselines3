@@ -13,12 +13,12 @@ environment:
 
 algorithm:
   name: PPO
-  total_timesteps: 30000000
+  total_timesteps: 60000000
   save_every_timestep: 500000
   max_no_improvement_evals: 6
   min_evals: 4
-  improve_tol: 0.05
-  eval_offline: true
+  improve_tol: -0.2
+  eval_offline: false
   n_eval_episodes: 100
   algorithm_kwargs:
     gamma: 0.9984539792726858
@@ -26,22 +26,22 @@ algorithm:
     ent_coef: 0
     vf_coef: 0.5
     normalize_advantage: false
-    max_grad_norm: 0.16128852812136107
-    learning_rate: 2.417399226931629e-05
+    max_grad_norm: 0.125
+    learning_rate: 0.00011642278771351222
     learning_rate_schedule:
       type: kla
       target_kl: null
     n_steps: 116
-    n_epochs: 10
+    n_epochs: 5
     batch_size: 18734
     clip_range: 0.1
 
 decomposition:
   independent_states: [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
   in_tree:
+    - [1, 1]
     - [2, 1]
     - [-1, 1]
-    - [1, 1]
     - [-1, 2]
   in_st_map:
     - [0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1]
@@ -56,13 +56,13 @@ policy:
     net_arch:
       pi:
         - - [0]
-          - [512,512,512]
+          - [102,102,102]
         - - [1]
-          - [512,512,512]
+          - [256,256,256]
         - - [2]
-          - [512,512,512]
+          - [410,410,410]
         - - [3]
-          - [512,512,512]
+          - [102,102,102]
     activation_fn: relu
     optimizer_class: rmsprop
     log_std_init: -0.01946188846120455

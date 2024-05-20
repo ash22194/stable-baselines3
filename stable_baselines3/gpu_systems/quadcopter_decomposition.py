@@ -19,7 +19,7 @@ class GPUQuadcopterDecomposition:
 				'QT': np.diag(np.concatenate((np.zeros(2), np.ones(10)))),\
 				'goal': np.array([[0.], [0.], [1.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.], [0.]]), 'u0': np.array([[m*g], [0.], [0.], [0.]]),\
 				'T': 3, 'dt': 1e-3, 'lambda_': 1, 'X_DIMS': 12, 'U_DIMS': 4,\
-				'X_DIMS_FREE': np.arange(10)+2, 'X_DIMS_FIXED': np.array([]), 'U_DIMS_FREE': np.arange(4), 'U_DIMS_FIXED': np.array([]), 'U_DIMS_CONTROLLED': np.array([]),\
+				'X_DIMS_FREE': np.arange(11)+2, 'X_DIMS_FIXED': np.array([]), 'U_DIMS_FREE': np.arange(4), 'U_DIMS_FIXED': np.array([]), 'U_DIMS_CONTROLLED': np.array([]),\
 				'x_sample_limits': np.array([[-2., 2.], [-2., 2.], [0.6, 1.4], [-np.pi/5, np.pi/5], [-np.pi/5, np.pi/5], [-2*np.pi/5, 2*np.pi/5], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.], [-3., 3.]]),\
 				'x_bounds': np.array([[-10., 10.], [-10., 10.], [0., 2.], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi/3, 2*np.pi/3], [-2*np.pi, 2*np.pi], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.], [-12., 12.]]),\
 				'u_limits': np.array([[0, 2*m*g], [-0.35*m*g, 0.35*m*g], [-0.35*m*g, 0.35*m*g], [-0.7*m*g, 0.7*m*g]])

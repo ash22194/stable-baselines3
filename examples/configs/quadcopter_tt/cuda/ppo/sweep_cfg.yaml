@@ -5,8 +5,8 @@ criteria:
 algorithm:
   n_steps:
     type: 'int'
-    low: 40
-    high: 400
+    low: 60
+    high: 600
     log: True
 
   n_epochs:

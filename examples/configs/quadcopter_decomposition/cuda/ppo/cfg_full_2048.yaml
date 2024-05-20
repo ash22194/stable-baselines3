@@ -13,12 +13,12 @@ environment:
 
 algorithm:
   name: PPO
-  total_timesteps: 60000000
+  total_timesteps: 30000000
   save_every_timestep: 500000
   max_no_improvement_evals: 6
   min_evals: 4
-  improve_tol: -0.1
-  eval_offline: false
+  improve_tol: -0.05
+  eval_offline: true
   n_eval_episodes: 100
   algorithm_kwargs:
     gamma: 0.9984539792726858
@@ -56,7 +56,7 @@ policy:
     net_arch:
       pi:
         - - [0,1,2,3]
-          - [256,256,256]
+          - [2048,2048,2048]
     activation_fn: relu
     optimizer_class: rmsprop
     log_std_init: -0.01946188846120455
