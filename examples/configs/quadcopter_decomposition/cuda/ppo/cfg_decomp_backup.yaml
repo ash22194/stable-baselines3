@@ -13,12 +13,12 @@ environment:
 
 algorithm:
   name: PPO
-  total_timesteps: 60000000
+  total_timesteps: 30000000
   save_every_timestep: 500000
   max_no_improvement_evals: 6
   min_evals: 4
-  improve_tol: -0.2
-  eval_offline: false
+  improve_tol: -0.05
+  eval_offline: true
   n_eval_episodes: 100
   algorithm_kwargs:
     gamma: 0.9984539792726858
@@ -26,7 +26,7 @@ algorithm:
     ent_coef: 0
     vf_coef: 0.5
     normalize_advantage: false
-    max_grad_norm: 0.09753530446987978
+    max_grad_norm: 0.16128852812136107
     learning_rate: 2.417399226931629e-05
     learning_rate_schedule:
       type: kla
@@ -40,12 +40,12 @@ decomposition:
   independent_states: [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
   in_tree:
     - [2, 1]
-    - [2, 1]
     - [-1, 1]
+    - [1, 1]
     - [-1, 2]
   in_st_map:
-    - [0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1]
-    - [0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 1]
+    - [0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1]
+    - [0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1]
     - [0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1]
     - [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1]
 
@@ -55,12 +55,14 @@ policy:
   policy_kwargs:
     net_arch:
       pi:
-        - - [0,1]
-          - [1024,1024,1024]
+        - - [0]
+          - [128,128,128]
+        - - [1]
+          - [128,128,128]
         - - [2]
-          - [819,819,819]
+          - [128,128,128]
         - - [3]
-          - [205,205,205]
+          - [128,128,128]
     activation_fn: relu
     optimizer_class: rmsprop
     log_std_init: -0.01946188846120455
