@@ -1,20 +1,21 @@
-import torch
+import torch as th
 from torch import nn
 import os
-import warnings
+import glob
+
 import argparse
 from copy import deepcopy
 from shutil import copyfile
 from ruamel.yaml import YAML
 import cProfile
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
-from ipdb import set_trace
+
 from matplotlib import pyplot as plt
 import gymnasium as gym
 import numpy as np
 from typing import Callable, Dict
 
-from stable_baselines3.gpu_systems import GPUQuadcopter, GPUQuadcopterTT, GPUUnicycle
+from stable_baselines3.gpu_systems import GPUQuadcopter, GPUQuadcopterDecomposition, GPUQuadcopterTT, GPUUnicycle
 
 from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.callbacks import BaseCallback, CustomSaveLogCallback, CustomEvalCallback, StopTrainingOnNoModelImprovement
@@ -88,13 +89,13 @@ def parse_common_args(cfg: dict, env_device: str = 'cpu'):
 	# optimizer args
 	if ('optimizer_class' in policy_args['policy_kwargs'].keys()):
 		if (policy_args['policy_kwargs']['optimizer_class'] == 'rmsprop'):
-			policy_args['policy_kwargs']['optimizer_class'] = torch.optim.RMSprop
+			policy_args['policy_kwargs']['optimizer_class'] = th.optim.RMSprop
 			policy_args['policy_kwargs']['optimizer_kwargs'] = dict(alpha=0.99, eps=1e-5, weight_decay=0)
 		elif (policy_args['policy_kwargs']['optimizer_class'] == 'rmsproptflike'):
 			policy_args['policy_kwargs']['optimizer_class'] = RMSpropTFLike 
 			policy_args['policy_kwargs']['optimizer_kwargs'] = dict(eps=1e-5)
 		elif (policy_args['policy_kwargs']['optimizer_class'] == 'adam'):
-			policy_args['policy_kwargs']['optimizer_class'] = torch.optim.Adam
+			policy_args['policy_kwargs']['optimizer_class'] = th.optim.Adam
 			policy_args['policy_kwargs']['optimizer_kwargs'] = None
 
 	cfg['environment'] = environment_args
@@ -195,12 +196,22 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 	num_inputs = decomposition['num_inputs']
 	num_states = decomposition['num_states']
 	input_tree = decomposition['input_tree']
-	# populate the input-tree with appropriate module architecture
+	# populate the input-tree with appropriate module architecture and load evlautations if exists
 	for imm in range(len(input_tree)-1):
 		mm_inputs = input_tree[imm+1][0]
 		which_module = [np.any(mm_inputs[:,np.newaxis] == np.array(archm[0]), axis=0) for archm in net_arch['pi']]
 		assert np.all([np.logical_or(np.all(wm), np.logical_not(np.any(wm))) for wm in which_module]), 'inconsistent input coupling in network architecture and decomposition'
 		input_tree[imm+1][1]['arch'] = [net_arch['pi'][iwm] for iwm, wm in enumerate(which_module) if np.all(wm)]
+
+		# load logged evaluation information
+		subsystem_input_id = ''.join(str(e) for e in input_tree[imm+1][0].tolist())
+		subpolicy_load_dir = os.path.join(load_dir, 'U'+subsystem_input_id+'*')
+		subpolicy_load_dir = glob.glob(subpolicy_load_dir)
+		assert len(subpolicy_load_dir)==1, 'check subpolicy logging directory for subsystem %s'%subsystem_input_id
+
+		evaluations_filename = os.path.join(subpolicy_load_dir[0], 'evaluations.npz')
+		assert os.path.isfile(evaluations_filename), 'evalutations.npz for subsystem %s'%subsystem_input_id
+		input_tree[imm+1][1].update(np.load(evaluations_filename)) # add the logged evaluation information for the subsystem
 	independent_states = decomposition.pop('independent_states')
 
 	# extract environment args
@@ -212,17 +223,22 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 	environment_params['X_DIMS_FREE'] = np.nonzero(independent_states)[0]
 	environment_params['X_DIMS_FIXED'] = np.array([], dtype=np.int32)
 	environment_args['environment_kwargs']['param'] = environment_params
+	if (environment_args['environment_kwargs'].get('intermittent_starts', None) is not None):
+		environment_args['environment_kwargs']['intermittent_starts'] = False
 
-	env = get_gpu_env(environment_args['name'])
+	env = get_gpu_env(environment_args['name'], env_device, environment_args['environment_kwargs'])
 	is_gpu_env = True
-	if (env is None):
+	if ((env is None) or (not (env_device=='cuda'))):
 		env = gym.make(environment_args.get('eval_envname', environment_args['name']), **environment_args['environment_kwargs'])
 		is_gpu_env = False
+
+	model_env = gym.make(environment_args.get('eval_envname'), **environment_args['environment_kwargs'])
 
 	# load starts if test_starts exist else sample and save
 	if (os.path.isfile(test_starts) and (os.path.splitext(test_starts)[-1]=='.npy')):
 		starts = np.load(test_starts, allow_pickle=False, mmap_mode=None)
 		if (is_gpu_env):
+			starts = th.asarray(starts, device=env_device)
 			env.set_num_envs(starts.shape[0])
 	else:
 		num_starts = 100
@@ -251,13 +267,16 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 	mean_discounted_rewards = []
 	mean_final_errors = []
 	checkpoint_steps = []
+	checkpoint_traintime = []
 	previous_load_iter = -1
 	current_load_iter = 0
-	cummulative_steps = 0
 	while (not (current_load_iter == previous_load_iter)):
 		# load model weights for the current iteration
 		curr_input_tree = deepcopy(input_tree)
 		num_leaf_nodes = 1
+		cummulative_steps = 0
+		cummulative_traintime = 0
+
 		while (num_leaf_nodes > 0):
 			num_leaf_nodes = sum([True for it in curr_input_tree[1:] if ((len(it[1]['children'])==0) and (not ('weights' in it[1].keys())))])
 
@@ -341,6 +360,7 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 				next_load_iter = current_load_iter if is_parent_not_root else max(next_load_iter_, current_load_iter)
 				# print('inputs :', active_inputs, 'parent :', node_parent, ', is parent root? :', (not is_parent_not_root), ', load iter :', next_load_iter)
 				cummulative_steps += next_load_iter_
+				cummulative_traintime += ((node[1]['time_rollout'] + node[1]['time_train_loop']) * next_load_iter_ / node[1]['timesteps'][-1])
 				submodel = algorithm.load(file)
 
 				# Update the parent in the input_tree and save subpolicies for reuse
@@ -374,7 +394,7 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 				current_load_iter = next_load_iter
 				policy_args['policy_kwargs']['net_arch'] = dict(pi=node_net_arch, vf=node_vf_arch)
 				# create the model
-				model = algorithm('DecompositionMlpPolicy', env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
+				model = algorithm('DecompositionMlpPolicy', model_env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
 
 				# initialize frozen model weights
 				node_weights = model.policy.get_weights()
@@ -404,10 +424,10 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 				mean_rewards += [np.mean(episode_rewards)]
 				mean_discounted_rewards += [np.mean(episode_discounted_rewards)]
 				mean_final_errors += [np.mean(final_errors)]
-				checkpoint_steps += [deepcopy(cummulative_steps)]
-				cummulative_steps = 0
+				checkpoint_steps += [deepcopy(cummulative_steps) / 1000000.]
+				checkpoint_traintime += [deepcopy(cummulative_traintime) / 1000.]
 	
-	return mean_rewards, mean_discounted_rewards, mean_final_errors, checkpoint_steps
+	return mean_rewards, mean_discounted_rewards, mean_final_errors, checkpoint_steps, checkpoint_traintime
 
 
 def evaluate_policy_customgpuenv(test_env, model, starts, verbose=False):
@@ -482,6 +502,7 @@ def main():
 	parser.add_argument('--load_dirs', nargs='+', default=[], help='list of directories to load the models from')
 	parser.add_argument('--labels', nargs='+', default=[], help='list of labels for evaluation plots')
 	parser.add_argument('--test_starts', type=str, default='', help='npy file with start configs to test from')
+	parser.add_argument('--env_device', type=str, default='cpu', help='run test environment on gpu or cpu')
 	# parser.add_argument('--num_rollouts', type=int, default=10, help='number of episodes to rollout')
 	# parser.add_argument('--record', default=False, action='store_true', help='record the rollouts?')
 	# parser.add_argument('--evaluate_lqr', default=False, action='store_true', help='compare against an lqr controller?')
@@ -499,10 +520,13 @@ def main():
 		labels = labels[:len(load_dirs)]
 
 	starts = args.test_starts
+	env_device = args.env_device
 
+	fig_steps = plt.figure()
+	fig_time = plt.figure()
 	for load_dir, label in zip(load_dirs, labels):
 		print('*** Testing %s ***'%label)
-		mean_rewards, mean_discounted_rewards, mean_final_errors, checkpoint_steps = evaluate_decomposition_policies(load_dir, test_starts=starts)
+		mean_rewards, mean_discounted_rewards, mean_final_errors, checkpoint_steps, checkpoint_traintime = evaluate_decomposition_policies(load_dir, env_device, test_starts=starts)
 		if (not os.path.isfile(starts)) or (not (os.path.splitext(starts)[-1]=='.npy')):
 			starts = os.path.join(load_dir, 'test_starts.npy')
 
@@ -511,12 +535,27 @@ def main():
 			mean_rewards=mean_rewards, 
 			mean_discounted_rewards=mean_discounted_rewards, 
 			mean_final_errors=mean_final_errors, 
-			checkpoint_steps=checkpoint_steps
+			checkpoint_steps=checkpoint_steps,
+			checkpoint_traintime=checkpoint_traintime
 		)
+
+		plt.figure(fig_steps.number)
 		plt.plot(checkpoint_steps, mean_discounted_rewards, label=label)
 
+		plt.figure(fig_time.number)
+		plt.plot(checkpoint_traintime, mean_discounted_rewards, label=label)
+
+	plt.figure(fig_steps.number)
+	plt.ylabel('r$V(\mathbf{x})$')
+	plt.xlabel('simulation steps (M)')
 	plt.legend()
-	plt.show()
+	fig_steps.savefig(os.path.join(load_dirs[0], 'comparison_wsteps.pdf'))
+
+	plt.figure(fig_time.number)
+	plt.ylabel('r$V(\mathbf{x})$')
+	plt.xlabel('time (sec)')
+	plt.legend()
+	fig_time.savefig(os.path.join(load_dirs[0], 'comparison_wtime.pdf'))
 
 if __name__=='__main__':
 	main()
