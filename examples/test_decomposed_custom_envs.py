@@ -15,7 +15,7 @@ import gymnasium as gym
 import numpy as np
 from typing import Callable, Dict
 
-from stable_baselines3.gpu_systems import GPUQuadcopter, GPUQuadcopterDecomposition, GPUQuadcopterTT, GPUUnicycle
+from stable_baselines3.gpu_systems import GPUQuadcopter, GPUQuadcopterDecomposition, GPUQuadcopterTT, GPUQuadcopterTTDecomposition, GPUUnicycle
 
 from stable_baselines3 import A2CwReg, PPO, TD3
 from stable_baselines3.common.callbacks import BaseCallback, CustomSaveLogCallback, CustomEvalCallback, StopTrainingOnNoModelImprovement
@@ -35,6 +35,8 @@ def get_gpu_env(env_name: str, env_device: str, env_kwargs: Dict = dict()):
 		env = GPUQuadcopterTT(device=env_device, **env_kwargs)
 	elif (env_name=='GPUQuadcopterDecomposition'):
 		env = GPUQuadcopterDecomposition(device=env_device, **env_kwargs)
+	elif (env_name=='GPUQuadcopterTTDecomposition'):
+		env = GPUQuadcopterTTDecomposition(device=env_device, **env_kwargs)
 	elif (env_name=='GPUUnicycle'):
 		env = GPUUnicycle(device=env_device, **env_kwargs)
 	else:
@@ -392,6 +394,14 @@ def evaluate_decomposition_policies(load_dir: str, env_device: str = 'cpu', test
 			else:
 				previous_load_iter = current_load_iter
 				current_load_iter = next_load_iter
+				# append appropriate observtion dims for different policy modules
+				for inna in range(len(node_net_arch)):
+					node_net_arch[inna][1] = env.get_obs_dims(state_subdims=node_net_arch[inna][1])
+				if (type(node_vf_arch[0])==list):
+					if (type(node_vf_arch[0][0])==str):
+						node_vf_arch[0] = env.get_obs_dims(state_subdims=node_vf_arch[0][0])
+					elif (type(node_vf_arch[0][0])==int):
+						node_vf_arch[0] = env.get_obs_dims(state_subdims=node_vf_arch[0])
 				policy_args['policy_kwargs']['net_arch'] = dict(pi=node_net_arch, vf=node_vf_arch)
 				# create the model
 				model = algorithm('DecompositionMlpPolicy', model_env, **algorithm_args.get('algorithm_kwargs'), policy_kwargs=policy_args.get('policy_kwargs'))
