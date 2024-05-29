@@ -248,8 +248,9 @@ class GPUQuadcopterTTDecomposition:
 			reference_trajectory_ids,
 			th.as_tensor([self.th_reference_trajectory.shape[1]-1], device=self.device, dtype=th.int)
 		)
-		delta_reference = th.unsqueeze(self.state, dim=2) - th.transpose(self.th_reference_trajectory[:,reference_trajectory_ids], 0, 1)		
-		self.obs[:,(self.observation_dims.shape[0]+1):] = th.reshape(delta_reference, (self.num_envs, self.X_DIMS*self.reference_trajectory_horizon))
+		delta_reference = th.unsqueeze(self.state, dim=2) - th.transpose(self.th_reference_trajectory[:,reference_trajectory_ids], 0, 1)
+		# self.obs[:,(self.observation_dims.shape[0]+1):] = th.reshape(delta_reference, (self.num_envs, self.X_DIMS*self.reference_trajectory_horizon)) # wrong way to reshape
+		self.obs[:,(self.observation_dims.shape[0]+1):] = th.reshape(th.transpose(delta_reference, 1, 2), (self.num_envs, self.X_DIMS*self.reference_trajectory_horizon))
 
 	def _interp_goal(self, step_count):
 		ref_step_count = step_count / self.horizon * (self.th_reference_trajectory.shape[1]-1)
