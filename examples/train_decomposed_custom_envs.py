@@ -150,17 +150,24 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 	# update environment config
 	# TODO: specify which inputs and state varaibles to fix in the dynamics
 	num_envs = node_environment_args.get('num_envs')
+	n_eval_episodes = node_algorithm_args.get('n_eval_episodes', 30)
+
 	# eval_envname = node_environment_args.get('eval_envname', node_environment_args.get('name'))
 	eval_envname = node_environment_args.get('name')
 	eval_env_kwargs = deepcopy(node_environment_args['environment_kwargs'])
 	if (eval_env_kwargs.get('intermittent_starts', None) is not None):
 		eval_env_kwargs['intermittent_starts'] = False
-	n_eval_episodes = node_algorithm_args.get('n_eval_episodes', 30)
+	
 	if ((env_device=='cuda') or (env_device=='mps')):
 		env = get_gpu_env(node_environment_args.get('name'), env_device, node_environment_args.get('environment_kwargs', dict()))
 		env = GPUVecEnv(env, num_envs=num_envs)
 
 		eval_env = get_gpu_env(eval_envname, env_device, eval_env_kwargs)
+		if (eval_env is None):
+			eval_env = gym.make(eval_envname, **(node_environment_args.get('environment_kwargs', dict())))
+		else:
+			eval_env.set_num_envs(n_eval_episodes)
+			n_eval_episodes = 1
 	else:
 		normalized_rewards = node_environment_args.get('normalized_rewards')
 		env = make_vec_env(
@@ -178,12 +185,6 @@ def setup_subpolicy_computation(node_environment_args: dict, node_algorithm_args
 			)
 
 		eval_env = gym.make(eval_envname, **eval_env_kwargs)
-
-	if (eval_env is None):
-		eval_env = gym.make(eval_envname, **(node_environment_args.get('environment_kwargs', dict())))
-	else:
-		eval_env.set_num_envs(n_eval_episodes)
-		n_eval_episodes = 1
 
 	# check if saved model exist to load and restart training from
 	model_save_prefix = node_policy_args.get('save_prefix')

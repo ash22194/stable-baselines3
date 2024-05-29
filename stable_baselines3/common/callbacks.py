@@ -6,6 +6,7 @@ import sys
 import gymnasium as gym
 import numpy as np
 import torch as th
+import time
 
 from stable_baselines3.common.logger import Logger
 
@@ -24,6 +25,18 @@ from stable_baselines3.common import base_class
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv, sync_envs_normalization
 
+class CPUTimeEvent:
+	def __init__(self):
+		self.record()
+
+	def record(self):
+		self.event_t = time.time()
+	
+	def elapsed_time(self, ref_event):
+		'''
+		return elapsed time in milliseconds
+		'''
+		return ((ref_event.event_t - self.event_t) * 1000.)
 
 class BaseCallback(ABC):
 	"""
@@ -595,15 +608,14 @@ class CustomEvalCallback(EventCallback):
 		self.cleanup = cleanup
 		self.curr_check_point_id = 0
 		self.time_run = time_run
+		# in milli-seconds
+		self.time_rollout = 0.
+		self.time_step = 0.
+		self.time_buffer = 0.
+		self.time_eval = 0.
+		self.time_train_loop = 0.
+		# define events
 		if (time_run=='cuda'):
-			# in milli-seconds
-			self.time_rollout = 0.
-			self.time_step = 0.
-			self.time_buffer = 0.
-			self.time_eval = 0.
-			self.time_train_loop = 0.
-
-			# define events
 			self.rollout_start = th.cuda.Event(enable_timing=True)
 			self.step_start = th.cuda.Event(enable_timing=True)
 			self.buffer_start = th.cuda.Event(enable_timing=True)
@@ -617,6 +629,21 @@ class CustomEvalCallback(EventCallback):
 			self.eval_end = th.cuda.Event(enable_timing=True)
 			self.train_loop_end = th.cuda.Event(enable_timing=True)
 			self.train_end = th.cuda.Event(enable_timing=True)
+
+		elif (time_run=='cpu'):
+			self.rollout_start = CPUTimeEvent()
+			self.step_start = CPUTimeEvent()
+			self.buffer_start = CPUTimeEvent()
+			self.eval_start = CPUTimeEvent()
+			self.train_loop_start = CPUTimeEvent()
+			self.train_start = CPUTimeEvent()
+
+			self.rollout_end = CPUTimeEvent()
+			self.step_end = CPUTimeEvent()
+			self.buffer_end = CPUTimeEvent()
+			self.eval_end = CPUTimeEvent()
+			self.train_loop_end = CPUTimeEvent()
+			self.train_end = CPUTimeEvent()
 
 		elif (time_run is not None):
 			NotImplementedError
@@ -695,37 +722,47 @@ class CustomEvalCallback(EventCallback):
 
 	def _on_training_start(self) -> None:
 		# for timing measurements only
-		if (self.time_run=='cuda'):
-			th.cuda.synchronize()
+		if (self.time_run is not None):
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.train_start.record()
 
-			th.cuda.synchronize()
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.train_loop_start.record()
 
 	def _on_rollout_start(self) -> None:
 		# for timing measurements only
-		if (self.time_run=='cuda'):
-			th.cuda.synchronize()
+		if (self.time_run is not None):
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.train_loop_end.record()
-			th.cuda.synchronize()
+
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.time_train_loop += self.train_loop_start.elapsed_time(self.train_loop_end)
 			self.logger.record("time/train_loop", self.time_train_loop / 1000.)
 
-			th.cuda.synchronize()
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.rollout_start.record()
 
 	def _before_step(self) -> None:
 		# for timing measurements only
 		# the locals call happens after the step, so assume no access to local variables
-		if (self.time_run=='cuda'):
-			th.cuda.synchronize()
+		if (self.time_run is not None):
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.step_start.record()
 
 	def _on_step(self) -> None:
-		if (self.time_run=='cuda'):
-			th.cuda.synchronize()
+		if (self.time_run is not None):
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.step_end.record()
-			th.cuda.synchronize()
+
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.time_step += self.step_start.elapsed_time(self.step_end)
 
 		continue_training = True
@@ -737,11 +774,11 @@ class CustomEvalCallback(EventCallback):
 			for ts in terminal_statnames:
 				ts_stat = [terminal_infos[ii][ts] for ii in range(len(terminal_infos)) if (not np.isnan(terminal_infos[ii][ts]))]
 				self.logger.record("rollout/" + ts, np.mean(ts_stat))
-				if (ts == "ep_reward"):
+				if (ts == "ep_reward") or (ts == "ep_rew_mean"):
 					self.episode_rewards = ts_stat
-				elif (ts == "ep_length"):
+				elif (ts == "ep_length") or (ts == "ep_len_mean"):
 					self.episode_lengths = ts_stat
-				elif (ts == "ep_terminal_goal_dist"):
+				elif (ts == "ep_terminal_goal_dist") or (ts == "ep_tracking_err"):
 					self.episode_final_goal_dist = ts_stat
 
 		if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
@@ -764,16 +801,20 @@ class CustomEvalCallback(EventCallback):
 						episode_rewards, episode_discounted_rewards, episode_lengths, episode_final_goal_dist = self._evaluate_policy()
 				except AttributeError:
 					# if not a gym env then a gpu env
-					if (self.time_run=='cuda'):
-						th.cuda.synchronize()
+					if (self.time_run is not None):
+						if (self.time_run=='cuda'):
+							th.cuda.synchronize()
 						self.eval_start.record()
 
 					episode_rewards, episode_discounted_rewards, episode_lengths, episode_final_goal_dist = self._evaluate_policy_customgpuenv()
 
-					if (self.time_run=='cuda'):
-						th.cuda.synchronize()
+					if (self.time_run is not None):
+						if (self.time_run=='cuda'):
+							th.cuda.synchronize()
 						self.eval_end.record()
-						th.cuda.synchronize()
+
+						if (self.time_run=='cuda'):
+							th.cuda.synchronize()
 						self.time_eval += self.eval_start.elapsed_time(self.eval_end)
 			else:
 				episode_rewards = self.episode_rewards if hasattr(self, 'episode_rewards') else [-np.inf]
@@ -792,15 +833,15 @@ class CustomEvalCallback(EventCallback):
 				if len(self._is_success_buffer) > 0:
 					self.evaluations_successes.append(self._is_success_buffer)
 					kwargs = dict(successes=self.evaluations_successes)
-				if (self.time_run=='cuda'):
-					kwargs.update(
-						dict(time_rollout=self.time_rollout,
-							time_step=self.time_step,
-							time_buffer=self.time_buffer,
-							time_eval=self.time_eval,
-							time_train_loop=self.time_train_loop
-						)
+
+				kwargs.update(
+					dict(time_rollout=self.time_rollout,
+						time_step=self.time_step,
+						time_buffer=self.time_buffer,
+						time_eval=self.time_eval,
+						time_train_loop=self.time_train_loop
 					)
+				)
 
 				np.savez(
 					self.log_path,
@@ -848,13 +889,14 @@ class CustomEvalCallback(EventCallback):
 				if self.best_model_save_path is not None:
 					self.model.save(os.path.join(self.best_model_save_path, "best_model"))
 				self.best_mean_reward = float(mean_reward)
-				if (self.time_run=='cuda'):
-					# note the timings
-					self.best_time_rollout = self.time_rollout
-					self.best_time_step = self.time_step
-					self.best_time_buffer = self.time_buffer
-					self.best_time_eval = self.time_eval
-					self.best_time_train_loop = self.time_train_loop
+
+				# note the timings
+				self.best_time_rollout = self.time_rollout
+				self.best_time_step = self.time_step
+				self.best_time_buffer = self.time_buffer
+				self.best_time_eval = self.time_eval
+				self.best_time_train_loop = self.time_train_loop
+
 				# Trigger callback on new best model, if needed
 				if self.callback_on_new_best is not None:
 					continue_training = self.callback_on_new_best.on_step()
@@ -863,34 +905,45 @@ class CustomEvalCallback(EventCallback):
 			if self.callback is not None:
 				continue_training = continue_training and self._on_event()
 
-		if (self.time_run=='cuda'):
-			th.cuda.synchronize()
+		if (self.time_run is not None):
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.buffer_start.record()
 
 		return continue_training
 	
 	def _after_step(self) -> None:
 		# for timing measurements only
-		if (self.time_run=='cuda'):
-			th.cuda.synchronize()
+		if (self.time_run is not None):
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.buffer_end.record()
-			th.cuda.synchronize()
+
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.time_buffer += self.buffer_start.elapsed_time(self.buffer_end)
 
 	def _on_rollout_end(self) -> None:
 		# for timing measurements only
-		if (self.time_run=='cuda'):
-			th.cuda.synchronize()
+		if (self.time_run is not None):
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.buffer_start.record() # hacky way to measure buffer advantage computation time
-			th.cuda.synchronize()
+
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.time_buffer += self.buffer_end.elapsed_time(self.buffer_start)
 
-			th.cuda.synchronize()
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.rollout_end.record()
-			th.cuda.synchronize()
+
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.time_rollout += self.rollout_start.elapsed_time(self.rollout_end)
 
-			th.cuda.synchronize()
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.train_loop_start.record()
 
 			self.logger.record("time/step", self.time_step / 1000.)
@@ -900,10 +953,13 @@ class CustomEvalCallback(EventCallback):
 
 	def _on_training_end(self) -> None:
 		# for timing measurements only
-		if (self.time_run=='cuda'):
-			th.cuda.synchronize()
+		if (self.time_run is not None):
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.train_end.record()
-			th.cuda.synchronize()
+			
+			if (self.time_run=='cuda'):
+				th.cuda.synchronize()
 			self.logger.record("time/total", self.train_start.elapsed_time(self.train_end) / 1000.)
 
 	def _evaluate_policy_customgpuenv(self):
@@ -994,15 +1050,15 @@ class CustomEvalCallback(EventCallback):
 				if len(self._is_success_buffer) > 0:
 					self.evaluations_successes = self.evaluations_successes[:len(self.evaluations_timesteps)]
 					kwargs = dict(successes=self.evaluations_successes)
-				if (self.time_run=='cuda'):
-					kwargs.update(
-						dict(time_rollout=self.best_time_rollout,
-							time_step=self.best_time_step,
-							time_buffer=self.best_time_buffer,
-							time_eval=self.best_time_eval,
-							time_train_loop=self.best_time_train_loop
-						)
+
+				kwargs.update(
+					dict(time_rollout=self.best_time_rollout,
+						time_step=self.best_time_step,
+						time_buffer=self.best_time_buffer,
+						time_eval=self.best_time_eval,
+						time_train_loop=self.best_time_train_loop
 					)
+				)
 
 				np.savez(
 					self.log_path,
