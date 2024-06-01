@@ -206,7 +206,7 @@ def main():
 
 	cfg_files = [ff for ff in files if (os.path.splitext(ff)[-1] == '.yaml')]
 	if (len(cfg_files) > 1):
-		cfg_file = [os.path.splitext(os.path.basename(ff))[0].split('_')[-1]=='final' for ff in cfg_files]
+		cfg_file = [os.path.basename(ff)=='cfg.yaml' for ff in cfg_files]
 		if (np.any(cfg_file)):
 			cfg_file = cfg_files[np.nonzero(cfg_file)[0][0]]
 		else:

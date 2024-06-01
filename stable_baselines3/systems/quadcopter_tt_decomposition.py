@@ -142,12 +142,15 @@ class QuadcopterTTDecomposition(gym.Env):
 		self.state = state_
 		self.step_count += 1
 		self._update_tracking_error()
+		self.cumm_reward += reward
 
 		if ((self.step_count >= self.horizon) or reached_goal):
 			done = True
 			terminal_cost = self._get_terminal_cost() # terminal cost
 			reward -= terminal_cost
 			info = {
+				'ep_reward': self.cumm_reward,
+				'ep_length': self.step_count,
 				'ep_tracking_err': self.get_goal_dist(),
 				'ep_terminal_cost': terminal_cost,
 				'step_count' : self.step_count
@@ -173,6 +176,7 @@ class QuadcopterTTDecomposition(gym.Env):
 		
 		# set_trace()
 		self.state[self.X_DIMS_FIXED] = self.goal[self.X_DIMS_FIXED, self.step_count]
+		self.cumm_reward = 0.
 		self.tracking_error = 0
 		self._update_tracking_error()
 		info = {'step_count' : self.step_count}
